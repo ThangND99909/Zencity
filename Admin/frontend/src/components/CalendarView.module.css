@@ -1,0 +1,536 @@
+/* ============ GLOBAL CONTAINER ============ */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family: "Roboto", "Segoe UI", sans-serif;
+  background: #ffffff;
+  color: #3c4043;
+}
+
+/* ============ HEADER TOP BAR ============ */
+.header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  
+  padding: 8px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  background-color: #fff;
+}
+
+.leftHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.navBtn {
+  border: none;
+  background: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #5f6368;
+  border-radius: 4px;
+  padding: 4px 8px;
+  transition: 0.2s;
+}
+.navBtn:hover {
+  background: #f1f3f4;
+}
+
+.todayBtn {
+  background: #f1f3f4;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #3c4043;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.todayBtn:hover {
+  background: #e8eaed;
+}
+
+.headerDate {
+  font-size: 16px;
+  font-weight: 500;
+  color: #202124;
+  margin-left: 12px;
+}
+
+/* ============ MAIN AREA ============ */
+.mainArea {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ---------- LEFT SIDEBAR ---------- */
+.sidebar {
+  width: 260px;
+  border-right: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* + TẠO BUTTON */
+.createButton {
+  width: 100%;
+  background-color: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 24px;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 20px;
+  transition: background-color 0.2s;
+}
+.createButton:hover {
+  background-color: #1669d6;
+}
+
+/* MINI CALENDAR */
+.miniCalendar {
+  margin-bottom: 24px;
+}
+
+.miniHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #3c4043;
+}
+.miniHeader button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #5f6368;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 16px;
+  transition: 0.2s;
+}
+.miniHeader button:hover {
+  background: #f1f3f4;
+}
+
+.miniWeekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 10px;
+  color: #70757a;
+  font-weight: 500;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.miniDays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.miniDay {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.miniDay:hover {
+  background: #f1f3f4;
+}
+.otherMonth {
+  color: #dadce0;
+}
+.today {
+  background: #1a73e8;
+  color: #fff;
+}
+.selected {
+  background: #e8f0fe;
+  color: #1a73e8;
+  font-weight: 500;
+}
+
+/* CALENDAR LIST */
+.calendarList {
+  margin-top: 10px;
+}
+.listTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: #3c4043;
+  margin-bottom: 10px;
+}
+.calendarItem {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+  color: #3c4043;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.calendarItem:hover {
+  background: #f8f9fa;
+}
+.checkbox {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #5f6368;
+  border-radius: 2px;
+  margin-right: 8px;
+  transition: all 0.2s ease;
+}
+.checked {
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+
+/* ---------- MAIN CALENDAR ---------- */
+.calendarMain {
+  flex: 1;
+  position: relative;
+  background: #fff;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline {
+  display: flex;
+  flex: 1;
+  position: relative;
+  overflow-y: auto;
+  min-height: 100%;
+}
+
+/* TIME COLUMN */
+.timeColumn {
+  width: 70px;
+  border-right: 1px solid #e0e0e0;
+  text-align: right;
+  padding-top: 10px;
+  font-size: 11px;
+  color: #70757a;
+  background: #fff;
+}
+
+.timeLabel {
+  height: 60px;
+  padding-right: 6px;
+}
+
+/* EVENT COLUMN */
+.eventsColumn {
+  flex: 1;
+  position: relative;
+  background: #fff;
+}
+
+.hourLines {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+.hourLine {
+  height: 60px;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+/* EVENT ITEM */
+.eventItem {
+  position: absolute;
+  left: 80px;
+  right: 16px;
+  background: #b4c6c6 !important;
+  border-left: 4px solid #1a73e8;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #202124;
+  cursor: pointer;
+  transition: 0.2s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.eventItem:hover {
+  background: #d2e3fc;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+.eventName {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eventTeacher {
+  font-size: 11px;
+  color: #5f6368;
+}
+
+/* CURRENT TIME LINE */
+.currentTimeLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: red;
+  z-index: 10;
+}
+.currentTimeLine::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  background: #ea4335;
+  border-radius: 50%;
+}
+
+/* SCROLLBAR */
+.eventsColumn::-webkit-scrollbar {
+  width: 8px;
+}
+.eventsColumn::-webkit-scrollbar-thumb {
+  background: #dadce0;
+  border-radius: 4px;
+}
+.eventsColumn::-webkit-scrollbar-thumb:hover {
+  background: #bdbdbd;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1024px) {
+  .sidebar {
+    display: none;
+  }
+}
+
+.timeColumn {
+  width: 70px;
+  border-right: 1px solid #e0e0e0;
+  text-align: right;
+  padding-top: 10px;
+  font-size: 11px;
+  color: #70757a;
+  background: #fff;
+  position: relative;
+}
+
+.timezoneLabel {
+  position: sticky;
+  top: 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: #5f6368;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 4px 0 6px 0;
+  z-index: 2;
+}
+
+/* ===== Popup form ===== */
+.popupOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.popupBox {
+  background: #fff;
+  padding: 20px 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  max-width: 700px;      /* ⬆️ tăng từ khoảng 400–500px lên */
+  width: 90%;            /* co giãn theo màn hình */
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.popupBox h3 {
+  margin-top: 0;
+  color: #202124;
+  font-size: 18px;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 8px;
+}
+
+.popupBox label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #444;
+}
+
+.popupBox input {
+  width: 100%;
+  padding: 6px 8px;
+  margin-top: 4px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.popupActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.btnSave {
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.btnCancel {
+  background: #ccc;
+  color: #222;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ===== Popup chi tiết sự kiện ===== */
+.detailPopup {
+  position: fixed;
+  background: #f8f9fa;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  padding: 16px;
+  width: 320px;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease-in-out;
+}
+
+.detailPopup h3 {
+  margin: 0 0 8px 0;
+  color: #202124;
+}
+
+.detailPopup p {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #3c4043;
+}
+
+.detailPopup a {
+  color: #1a73e8;
+  text-decoration: none;
+}
+.detailPopup a:hover {
+  text-decoration: underline;
+}
+
+.detailActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.detailActions button {
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.detailActions button:nth-child(1) {
+  background: #1a73e8;
+  color: white;
+}
+.detailActions button:nth-child(2) {
+  background: #dc3545;
+  color: white;
+}
+.detailActions button:nth-child(3) {
+  background: #e0e0e0;
+}
+
+.formRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;   /* ✅ Cho phép tự xuống dòng nếu hẹp */
+}
+
+.formGroup {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;  /* ✅ Giữ kích thước tối thiểu để không bóp input */
+}
+
+.formGroup label {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.formGroup input,
+.formGroup select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.meetingRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.repeatBlock {
+  margin-top: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+}

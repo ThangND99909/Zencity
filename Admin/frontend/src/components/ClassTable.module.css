@@ -1,0 +1,210 @@
+.tableContainer {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+  background-color: #fff;
+  border: 1px solid #dee2e6;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th, td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6;
+}
+
+th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  color: #343a40;
+}
+
+tr:hover {
+  background-color: #f1f3f5;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.editBtn, .deleteBtn {
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: 0.2s;
+}
+
+.editBtn {
+  background-color: #007bff;
+  color: white;
+}
+
+.editBtn:hover {
+  background-color: #0069d9;
+}
+
+.deleteBtn {
+  background-color: #dc3545;
+  color: white;
+}
+
+.deleteBtn:hover {
+  background-color: #c82333;
+}
+
+/* Zoom link styles */
+.zoomLinkContainer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  max-width: 250px;
+}
+
+.zoomLink {
+  flex: 1;
+  color: #007bff;
+  text-decoration: none;
+  font-size: 12px;
+  word-break: break-all;
+  cursor: default;
+  padding: 4px;
+  border-radius: 3px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+}
+
+.zoomActions {
+  display: flex;
+  gap: 4px;
+}
+
+.copyButton, .openButton {
+  background: none;
+  border: 1px solid #dee2e6;
+  border-radius: 3px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.copyButton:hover {
+  background-color: #e9ecef;
+  border-color: #007bff;
+}
+
+.openButton:hover {
+  background-color: #e9ecef;
+  border-color: #28a745;
+}
+
+/* Meeting ID and Passcode containers */
+.meetingIdContainer, .passcodeContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meetingInfo {
+  background-color: #f8f9fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #dee2e6;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #495057;
+  flex: 1;
+}
+
+.passcodeInfo {
+  background-color: #fff3cd;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #ffeaa7;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #856404;
+  font-weight: 600;
+  flex: 1;
+}
+
+/* Responsive design */
+@media (max-width: 1200px) {
+  .table {
+    font-size: 13px;
+  }
+  
+  th, td {
+    padding: 8px 10px;
+  }
+  
+  .zoomLinkContainer {
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 768px) {
+  .tableContainer {
+    font-size: 12px;
+  }
+  
+  th, td {
+    padding: 6px 8px;
+  }
+  
+  .actions {
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .editBtn, .deleteBtn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  
+  .zoomLinkContainer {
+    flex-direction: column;
+    gap: 4px;
+    max-width: 150px;
+  }
+  
+  .zoomActions {
+    align-self: flex-end;
+  }
+  
+  .meetingIdContainer, .passcodeContainer {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+.copyButton.copied {
+  background-color: #d4edda;
+  border-color: #28a745;
+}
+
+/* Giới hạn nội dung dài (Zoom link, Meeting ID, Passcode) */
+td span, .zoomLinkContainer span {
+  display: inline-block;
+  max-width: 180px;     /* Giới hạn độ rộng */
+  white-space: nowrap;  /* Không xuống dòng */
+  overflow: hidden;     /* Ẩn phần dư */
+  text-overflow: ellipsis; /* Thêm dấu ... */
+  vertical-align: middle;
+}
+
+/* Khi hover thì hiện full nội dung trong tooltip */
+td span[title] {
+  cursor: pointer;
+}

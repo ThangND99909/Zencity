@@ -1,0 +1,48 @@
+# Logs
+*.log
+
+# Secrets
+.env
+
+# Python cache
+__pycache__/
+
+# Byte-compiled files
+*.pyc
+
+# Virtual environments
+venv/
+
+# IDE files
+.vscode/
+
+# Database files
+*.sqlite3
+
+# Ignore service account file
+service_account.json
+
+# Ignore migrations
+Admin/migrations/
+
+# Ignore compiled files
+*.so
+
+# Ignore system files
+.DS_Store
+
+# Ignore coverage reports
+htmlcov/
+
+# Ignore test output
+.coverage
+.tox/
+.nox/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore Google Calendar credentials
+Admin/backend/token.json
+# Ignore node modules
+node_modules/
