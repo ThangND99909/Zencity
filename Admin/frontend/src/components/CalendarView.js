@@ -1,3 +1,4 @@
+// frontend/src/components/CalendarView.js
 import React, { useState, useEffect, useRef } from "react";
 import styles from "./CalendarView.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
@@ -5,7 +6,7 @@ import { getEvent } from "../services/api";
 import { checkScheduleConflict } from "../services/api";
 import { getTimezones } from "../services/api";
 
-export default function CalendarView({ events, onEventClick, onDateSelect, onCreateEvent, onDeleteEvent }) {
+export default function CalendarView({ events, onEventClick, onDateSelect, onCreateEvent, onDeleteEvent, calendarFilter }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPopup, setShowPopup] = useState(false);
@@ -18,10 +19,9 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   const today = new Date();
 
   const [myCalendars, setMyCalendars] = useState([
-    { id: 1, name: "Thang Nguyen", color: "#1a73e8", checked: true },
-    { id: 2, name: "Sinh nhật", color: "#fbbc04", checked: true },
-    { id: 3, name: "Tasks", color: "#34a853", checked: true },
-    { id: 4, name: "ZenAI Tutor Schedule", color: "#ea4335", checked: true },
+    { id: 1, name: "Calendar Lẻ (Giờ lẻ)", color: "#1a73e8", checked: true },
+    { id: 2, name: "Calendar Chẵn (Giờ chẵn)", color: "#34a853", checked: true },
+    { id: 3, name: "Other", color: "#fbbc04", checked: true },
   ]);
 
   const [timezoneOptions, setTimezoneOptions] = useState([
@@ -41,6 +41,26 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     { value: "UTC", label: "🌐 Giờ UTC" }
   ]);
 
+  const [programOptions] = useState([
+    { value: "", label: "-- Chọn chương trình --" },
+    { value: "toán", label: "📐 Toán học" },
+    { value: "vật_lý", label: "⚛️ Vật lý" },
+    { value: "hóa_học", label: "🧪 Hóa học" },
+    { value: "sinh_học", label: "🧬 Sinh học" },
+    { value: "tiếng_anh", label: "🇬🇧 Tiếng Anh" },
+    { value: "ngữ_văn", label: "📖 Ngữ văn" },
+    { value: "lịch_sử", label: "🏛️ Lịch sử" },
+    { value: "địa_lý", label: "🗺️ Địa lý" },
+    { value: "gdcd", label: "⚖️ Giáo dục công dân" },
+    { value: "tin_học", label: "💻 Tin học" },
+    { value: "công_nghệ", label: "🔧 Công nghệ" },
+    { value: "ielts", label: "🎯 IELTS" },
+    { value: "toefl", label: "📝 TOEFL" },
+    { value: "programming", label: "👨‍💻 Lập trình" },
+    { value: "stem", label: "🔬 STEM" },
+    { value: "khác", label: "📌 Khác" },
+  ]);
+
   const timeSlots = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, "0")}:00`);
 
   useEffect(() => {
@@ -52,14 +72,21 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
         }
       } catch (error) {
         console.error("❌ Failed to fetch timezones, using default:", error);
-        // Vẫn giữ default options nếu API fail
       }
     };
     
     fetchTimezones();
   }, []);
 
-  const dailyEvents = events.filter((e) => {
+  // ✅ FILTER EVENTS DỰA TRÊN CALENDAR FILTER
+  const filteredEvents = events.filter(event => {
+    if (calendarFilter === 'both') return true;
+    if (calendarFilter === 'odd') return event._calendar_source === 'odd';
+    if (calendarFilter === 'even') return event._calendar_source === 'even';
+    return true;
+  });
+
+  const dailyEvents = filteredEvents.filter((e) => {
     const start = new Date(e.start.dateTime || e.start);
     const end = new Date(e.end.dateTime || e.end);
     const dayStart = new Date(selectedDate);
@@ -145,8 +172,9 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     const { zoomLink, teacher, program, classname, meetingId, passcode } = parseZoomInfo(raw);
     const eventId = event.id || event._id || event.eventId || event.class_id;
 
-    console.log("🔍 NORMALIZE EVENT - RECURRENCE CHECK:", {
+    console.log("🔍 NORMALIZE EVENT - CALENDAR CHECK:", {
       eventId,
+      calendarSource: event._calendar_source,
       hasRecurrenceArray: Array.isArray(event.recurrence),
       recurrenceArray: event.recurrence,
       recurringEventId: event.recurringEventId
@@ -154,9 +182,15 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
 
     // ✅ THÊM: Extract timezone từ Google Calendar event
     const eventTimezone = event.start?.timeZone || event.end?.timeZone || "Asia/Ho_Chi_Minh";
+    
+    // ✅ XÁC ĐỊNH CALENDAR TYPE VÀ MÀU SẮC
+    const calendarSource = event._calendar_source || 'odd';
+    const calendarName = calendarSource === 'odd' ? '📘 Calendar Lẻ' : '📗 Calendar Chẵn';
+    const calendarColor = calendarSource === 'odd' ? '#1a73e8' : '#34a853';
+    const calendarBadge = calendarSource === 'odd' ? '📘' : '📗';
 
     return {
-      ...event, // ⚠️ QUAN TRỌNG: Giữ nguyên tất cả fields gốc từ API
+      ...event,
       id: eventId,
       name: event.summary || event.name || "Không có tên",
       class_name: event.classname || event.class_name || classname || "",
@@ -165,22 +199,32 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       zoom: event.zoom_link || event.zoom || zoomLink || event.meeting_url || event.location || "",
       meeting_id: event.meeting_id || meetingId || "",
       passcode: event.passcode || passcode || "",
-      
-      // ✅ QUAN TRỌNG: Thêm timezone vào normalized event
       timezone: eventTimezone,
-      
-      // ✅ QUAN TRỌNG: Giữ nguyên recurrence data gốc
-      recurrence: event.recurrence, // Giữ nguyên array nếu có
+      recurrence: event.recurrence,
       repeat_count: event.repeat_count || 1,
       byday: event.byday || [],
       bymonthday: event.bymonthday || [],
       bymonth: event.bymonth || [],
+      // ✅ THÊM CALENDAR INFO
+      calendar_source: calendarSource,
+      calendar_name: calendarName,
+      calendar_color: calendarColor,
+      calendar_badge: calendarBadge,
     };
   };
 
-  // ✅ THÊM VÀO CALENDARVIEW (sau hàm normalizeEvent)
+  // ✅ THÊM HÀM KIỂM TRA GIỜ CHẴN LẺ ĐỂ HIỂN THỊ THÔNG BÁO
+  const checkEvenOddHour = (datetimeString) => {
+    if (!datetimeString) return 'unknown';
+    try {
+      const dt = new Date(datetimeString);
+      const hour = dt.getHours();
+      return hour % 2 === 0 ? 'even' : 'odd';
+    } catch {
+      return 'unknown';
+    }
+  };
 
-// 1. Copy hàm parseRecurrenceRule từ AdminSchedule
   const parseRecurrenceRule = (ruleString) => {
     if (!ruleString) {
       return { recurrenceType: "", repeatCount: 1, byday: [], bymonthday: [], bymonth: [] };
@@ -214,29 +258,23 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     return { recurrenceType, repeatCount, byday, bymonthday, bymonth };
   };
 
-  // 2. Copy hàm parseRecurrenceFromEvent từ AdminSchedule  
-  // 2. Copy hàm parseRecurrenceFromEvent từ AdminSchedule  
   const parseRecurrenceFromEvent = async (cls) => {
-    // TRƯỜNG HỢP 1: Event có recurrence trực tiếp
     if (cls.recurrence && Array.isArray(cls.recurrence) && cls.recurrence.length > 0) {
       const ruleString = cls.recurrence[0];
       return parseRecurrenceRule(ruleString);
     }
 
-    // TRƯỜNG HỢP 2: Event là instance - tìm master event
     if (cls.recurringEventId) {
       let masterEvent = null;
       
-      // Tìm trong data hiện tại trước
       masterEvent = events.find(event => event.id === cls.recurringEventId);
       if (masterEvent && masterEvent.recurrence) {
         const ruleString = masterEvent.recurrence[0];
         return parseRecurrenceRule(ruleString);
       }
 
-      // Fetch từ API nếu không tìm thấy - ✅ SỬA: DÙNG getEvent ĐÃ IMPORT Ở ĐẦU FILE
       try {
-        masterEvent = await getEvent(cls.recurringEventId); // ✅ ĐÃ IMPORT, KHÔNG CẦN dynamic import
+        masterEvent = await getEvent(cls.recurringEventId);
         if (masterEvent && masterEvent.recurrence) {
           const ruleString = masterEvent.recurrence[0];
           return parseRecurrenceRule(ruleString);
@@ -249,12 +287,10 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     return { recurrenceType: "", repeatCount: 1, byday: [], bymonthday: [], bymonth: [] };
   };
 
-  // 3. Copy hàm prepareEditData từ AdminSchedule
   const prepareEditData = async (cls) => {
     const { zoomLink, meetingId, passcode, program, teacher, classname } = 
       parseZoomInfo(cls.description || "");
 
-    // Parse recurrence data
     const recurrenceData = await parseRecurrenceFromEvent(cls);
 
     return {
@@ -268,19 +304,17 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       program: cls.program || program || "",
       start: cls.start?.dateTime || "",
       end: cls.end?.dateTime || "",
-      // ✅ Dùng recurrence data đã parse
       recurrence: recurrenceData.recurrenceType,
       repeat_count: recurrenceData.repeatCount,
       byday: recurrenceData.byday,
       bymonthday: recurrenceData.bymonthday,
       bymonth: recurrenceData.bymonth,
-      timezone: cls.timezone || "Asia/Ho_Chi_Minh", // ✅ LẤY TIMEZONE TỪ EVENT
+      timezone: cls.timezone || "Asia/Ho_Chi_Minh",
       recurrence_description: cls.recurrence_description || "",
+      calendar_source: cls.calendar_source || 'odd',
     };
   };
 
-
-  // ✅ HÀM TÌM MASTER EVENT TRONG DANH SÁCH EVENTS
   const findMasterEvent = (recurringEventId) => {
     if (!recurringEventId) return null;
     
@@ -294,7 +328,6 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     
     return master;
   };
-  
 
   const [timePosition, setTimePosition] = useState(null);
   useEffect(() => {
@@ -330,12 +363,9 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     
     const localDate = new Date(datetimeLocal);
     return localDate.toISOString();
-  
   };
 
-  // Thêm hàm tạo conflict message
   const createConflictMessage = (conflictResult, currentTeacher) => {
-    // 🆕 HIỂN THỊ LOẠI CHECK ĐỂ USER BIẾT
     const checkType = conflictResult.check_type || 'ai_full';
     const checkTypeText = {
       'ai_suggestions': 'AI Đề Xuất Thông Minh',
@@ -345,7 +375,6 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     
     let message = `🤖 KIỂM TRA XUNG ĐỘT (${checkTypeText})\n\n`;
     
-    // Hiển thị phân tích AI nếu có
     if (conflictResult.ai_analysis) {
       message += `📊 ${conflictResult.ai_analysis}\n\n`;
     }
@@ -365,7 +394,6 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       message += `✅ Không có xung đột trực tiếp với giáo viên "${currentTeacher}"\n\n`;
     }
     
-    // Đề xuất thông minh từ AI
     if (conflictResult.suggestions && conflictResult.suggestions.length > 0) {
       message += `💡 ĐỀ XUẤT THỜI GIAN THAY THẾ:\n`;
       conflictResult.suggestions.forEach((suggestion, index) => {
@@ -394,13 +422,9 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   const openPopup = (start, end) => {
     const defaultEnd = end > start ? end : new Date(start.getTime() + 60 * 60 * 1000);
     
-    // ✅ DETECT USER TIMEZONE THÔNG MINH HƠN
     const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let defaultTimezone = "Asia/Ho_Chi_Minh";
     
-    // Tìm timezone phù hợp nhất với user
-    let defaultTimezone = "Asia/Ho_Chi_Minh"; // Mặc định Vietnam
-    
-    // Nếu user ở các timezone phổ biến khác, dùng timezone của họ
     const commonTimezones = [
       "America/Chicago", "America/New_York", "America/Los_Angeles",
       "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"
@@ -411,6 +435,10 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     }
     
     console.log(`🕐 User timezone: ${userTimezone}, using: ${defaultTimezone}`);
+    
+    // ✅ THÊM THÔNG BÁO VỀ CALENDAR SẼ ĐƯỢC CHỌN
+    const hourType = checkEvenOddHour(start.toISOString());
+    const targetCalendar = hourType === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ';
     
     const defaultEvent = {
       title: "",
@@ -427,13 +455,21 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       byday: [],
       bymonthday: [],
       bymonth: [],
-      timezone: defaultTimezone, // ✅ DÙNG TIMEZONE PHÙ HỢP
+      timezone: defaultTimezone,
       recurrence_description: "",
+      // ✅ THÊM THÔNG TIN CALENDAR
+      hour_type: hourType,
+      target_calendar: targetCalendar,
     };
 
     setNewEvent(defaultEvent);
     setEditingEvent(null);
     setShowPopup(true);
+    
+    // ✅ HIỂN THỊ THÔNG BÁO VỀ CALENDAR
+    setTimeout(() => {
+      alert(`📅 Lưu ý:\nSự kiện bắt đầu lúc ${start.getHours()}h sẽ được lưu vào:\n${targetCalendar}\n\nGiờ chẵn → 📗 Calendar Chẵn\nGiờ lẻ → 📘 Calendar Lẻ`);
+    }, 100);
   };
 
   const handleSave = async () => {
@@ -441,20 +477,20 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       timezone: newEvent?.timezone,
       fullState: newEvent
     });
+    
     if (!newEvent.title) {
       alert("Vui lòng nhập tiêu đề!");
       return;
     }
-    alert("🎯 Hàm handleSave được gọi!");
-
-    // 🚨 THÊM ALERT TEST - DÒNG NÀY  
-    alert("🔍 Giáo viên: " + (newEvent.teacher || "CHƯA CÓ GIÁO VIÊN"));
+    
+    // ✅ KIỂM TRA GIỜ CHẴN LẺ TRƯỚC KHI LƯU
+    const hourType = checkEvenOddHour(newEvent.start);
+    const targetCalendar = hourType === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ';
+    
+    alert(`🎯 Sự kiện sẽ được lưu vào: ${targetCalendar}\nGiờ bắt đầu: ${new Date(newEvent.start).getHours()}h (${hourType === 'even' ? 'chẵn' : 'lẻ'})`);
     
     // 🔍 KIỂM TRA XUNG ĐỘT TRƯỚC KHI LƯU
     if (newEvent.teacher && newEvent.teacher.trim() !== "") {
-      // 🚨 THÊM ALERT TEST - DÒNG NÀY
-      alert("🛡️ Bắt đầu kiểm tra conflict...");
-      
       try {
         console.log("🛡️ Checking for schedule conflicts...");
         
@@ -465,27 +501,20 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
           newEvent.id
         );
 
-        // 🚨 THÊM ALERT TEST - DÒNG NÀY
-        alert("📊 Kết quả check conflict: " + JSON.stringify(conflictResult));
-
         // XỬ LÝ KẾT QUẢ AI
         if (conflictResult.has_conflict) {
           const conflictMessage = createConflictMessage(conflictResult, newEvent.teacher);
           
-          // NẾU CÓ ĐỀ XUẤT TỪ AI
           if (conflictResult.suggestions && conflictResult.suggestions.length > 0) {
             const userChoice = prompt(conflictMessage);
             
             if (userChoice === null) {
-              // USER BẤM CANCEL - CHẶN
               alert("🚫 Đã hủy tạo lịch do trùng lịch giáo viên");
               return; 
             } else if (userChoice === '1' || userChoice === '2') {
-              // USER CHỌN ĐỀ XUẤT - CHẶN (để chuyển thời gian)
               const suggestionIndex = parseInt(userChoice) - 1;
               const selectedSuggestion = conflictResult.suggestions[suggestionIndex];
               
-              // TỰ ĐỘNG CẬP NHẬT THỜI GIAN
               setNewEvent(prev => ({
                 ...prev,
                 start: formatForInput(selectedSuggestion.start),
@@ -493,61 +522,33 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
               }));
               
               alert(`✅ Đã chuyển sang thời gian: ${new Date(selectedSuggestion.start).toLocaleString('vi-VN')}`);
-              return; // Dừng để user xem thời gian mới
+              return;
             } else if (userChoice === '') {
-              // USER BẤM OK - CHO PHÉP TẠO (không return)
               alert("⚠️ Cảnh báo: Bạn vẫn tạo lịch dù có xung đột!");
               console.log("⚠️ User confirmed to create despite conflict");
-              // TIẾP TỤC KHÔNG RETURN
             } else {
-              // INPUT KHÔNG HỢP LỆ - CHẶN
               alert("❌ Lựa chọn không hợp lệ. Vui lòng thử lại.");
               return;
             }
           } else {
-            // KHÔNG CÓ ĐỀ XUẤT
             const userConfirmed = window.confirm(conflictMessage + "\n\nBấm OK để VẪN TẠO, Cancel để HỦY");
             
             if (!userConfirmed) {
-              // USER BẤM CANCEL - CHẶN
               alert("🚫 Đã hủy tạo lịch do trùng lịch giáo viên");
               return;
             }
-            // USER BẤM OK - CHO PHÉP TẠO (không return)
             alert("⚠️ Cảnh báo: Bạn vẫn tạo lịch dù có xung đột!");
           }
-        
         } else {
-          // 🚨 THÊM ALERT TEST - DÒNG NÀY
-          alert("✅ KHÔNG CÓ XUNG ĐỘT!");
-          
-          // KHÔNG CÓ XUNG ĐỘT, HIỂN THỊ PHÂN TÍCH AI
           if (conflictResult.ai_analysis) {
             alert(`🤖 AI Phân tích:\n${conflictResult.ai_analysis}\n\n✅ Không có xung đột!`);
           }
         }
       } catch (error) {
-        // 🚨 HIỂN THỊ LỖI CHI TIẾT
-          alert(`❌ LỖI CHECK CONFLICT:\n\n` +
-                `Status: ${error.response?.status}\n` +
-                `Message: ${error.response?.data?.detail || error.message}\n\n` +
-                `Vui lòng kiểm tra console để biết thêm chi tiết.`);
-          
-          console.error("❌ Error during conflict check:", error.response?.data || error);
+        alert(`❌ LỖI CHECK CONFLICT:\n\nStatus: ${error.response?.status}\nMessage: ${error.response?.data?.detail || error.message}`);
+        console.error("❌ Error during conflict check:", error.response?.data || error);
       }
-    } else {
-      // 🚨 THÊM ALERT TEST - DÒNG NÀY
-      alert("⚠️ Bỏ qua check conflict vì không có giáo viên");
     }
-
-    // 🔍 DEBUG TRƯỚC KHI TẠO EVENT DATA
-    console.log("🔍 DEBUG BEFORE CREATING EVENT DATA:");
-    console.log("newEvent.recurrence:", newEvent.recurrence);
-    console.log("newEvent.repeat_count:", newEvent.repeat_count);
-    console.log("newEvent.byday:", newEvent.byday);
-    console.log("newEvent.bymonthday:", newEvent.bymonthday);
-    console.log("newEvent.bymonth:", newEvent.bymonth);
-    console.log("Full newEvent state:", newEvent);
 
     const startTime = new Date(newEvent.start);
     const endTime = new Date(newEvent.end);
@@ -557,7 +558,6 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       return;
     }
 
-    // 🔧 THÊM VALIDATION - kiểm tra recurrence có giá trị không
     if (newEvent.recurrence && newEvent.recurrence.trim() !== "") {
       if (newEvent.recurrence === "WEEKLY" && (!newEvent.byday || newEvent.byday.length === 0)) {
         alert("Vui lòng chọn ít nhất một ngày trong tuần cho lịch lặp hàng tuần!");
@@ -604,7 +604,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       bymonth: newEvent.bymonth || [],
       start: formatForBackend(newEvent.start, finalTimezone),
       end: formatForBackend(newEvent.end, finalTimezone),
-      timezone: newEvent.timezone || "Asia/Ho_Chi_Minh", // ✅ DÙNG newEvent TRỰC TIẾP
+      timezone: newEvent.timezone || "Asia/Ho_Chi_Minh",
       recurrence_description: newEvent.recurrence_description || "",
       isEdit: !!editingEvent,
     };
@@ -765,24 +765,36 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
           <div
             className={styles.timeline}
             onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const clickY = e.clientY - rect.top;
+              // TEST 1: Lấy tất cả thông tin
+              const timeline = e.currentTarget;
+              const eventsColumn = timeline.querySelector(`.${styles.eventsColumn}`);
+              
+              
+              // Dùng eventsColumn nếu có, không thì dùng timeline
+              const targetEl = eventsColumn || timeline;
+              const rect = targetEl.getBoundingClientRect();
+              const scrollTop = targetEl.scrollTop;
+              
+              const clickY = e.clientY - rect.top + scrollTop;
               const hour = Math.floor(clickY / 60);
+              const safeHour = Math.max(0, Math.min(23, hour));
+              
+              
+              
               const newStart = new Date(selectedDate);
-              newStart.setHours(hour, 0, 0, 0);
+              newStart.setHours(safeHour, 0, 0, 0);
               const newEnd = new Date(newStart);
-              newEnd.setHours(hour + 1);
+              newEnd.setHours(safeHour + 1, 0, 0, 0);
+              
               openPopup(newStart, newEnd);
             }}
           >
             <div className={styles.timeColumn}>
-              {/* Phần GMT+7 riêng */}
-              <div className={styles.timezoneHeader}>
+              {/*<div className={styles.timezoneHeader}>
                 GMT{(new Date().getTimezoneOffset() / -60) >= 0 ? '+' : ''}
                 {new Date().getTimezoneOffset() / -60}
-              </div>
+              </div>*/}
               
-              {/* Phần các giờ */}
               <div className={styles.timeLabels}>
                 {timeSlots.map((t) => (
                   <div key={t} className={styles.timeLabel}>{t}</div>
@@ -801,16 +813,26 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                 const normalizedEvent = normalizeEvent(e);
                 const top = e.startMins;
                 const height = Math.max(e.endMins - e.startMins, 30);
+                
+                // ✅ ÁP DỤNG CSS CLASS DỰA TRÊN CALENDAR SOURCE
+                const eventClass = normalizedEvent.calendar_source === 'odd' 
+                  ? styles.eventItemOdd 
+                  : styles.eventItemEven;
+                
                 return (
                   <div
                     key={i}
-                    className={styles.eventItem}
+                    className={`${styles.eventItem} ${eventClass}`}
                     style={{
                       top: `${top}px`,
                       height: `${height}px`,
                       width: e.width,
                       left: e.left,
                       position: "absolute",
+                      borderLeft: `4px solid ${normalizedEvent.calendar_color}`,
+                      background: normalizedEvent.calendar_source === 'odd' 
+                        ? 'rgba(26, 115, 232, 0.1)' 
+                        : 'rgba(52, 168, 83, 0.1)',
                     }}
                     onClick={(ev) => {
                       ev.stopPropagation();
@@ -819,8 +841,19 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                       setShowDetailPopup(true);
                     }}
                   >
-                    <div className={styles.eventName}>{normalizedEvent.name}</div>
+                    <div className={styles.eventName}>
+                      {normalizedEvent.name}
+                      <span className={styles.calendarBadge}>
+                        {normalizedEvent.calendar_badge}
+                      </span>
+                    </div>
                     <div className={styles.eventTeacher}>{normalizedEvent.teacher}</div>
+                    <div className={styles.eventTime}>
+                      {new Date(normalizedEvent.start?.dateTime || normalizedEvent.start).toLocaleTimeString('vi-VN', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
+                    </div>
                   </div>
                 );
               })}
@@ -836,7 +869,14 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       {showDetailPopup && selectedEvent && (
         <div className={styles.popupOverlay}>
           <div className={styles.detailPopup}>
-            <h3>{selectedEvent.name}</h3>
+            <div className={styles.detailHeader}>
+              <h3>{selectedEvent.name}</h3>
+              <div className={`${styles.calendarBadgeDetail} ${
+                selectedEvent.calendar_source === 'odd' ? styles.badgeOdd : styles.badgeEven
+              }`}>
+                {selectedEvent.calendar_badge} {selectedEvent.calendar_name}
+              </div>
+            </div>
 
             {selectedEvent.class_name && (
               <p><b>Tên lớp:</b> {selectedEvent.class_name}</p>
@@ -865,26 +905,21 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
               })}
             </p>
 
-            {/* ✅ HIỂN THỊ TIMEZONE THÔNG MINH */}
             <p>
               <b>Múi giờ:</b> {
                 (() => {
-                  // Lấy timezone từ nhiều nguồn khác nhau
                   const eventTimezone = selectedEvent.timezone || 
                                       selectedEvent.start?.timeZone || 
                                       selectedEvent.end?.timeZone ||
                                       "Asia/Ho_Chi_Minh";
                   
-                  // Tìm label trong options
                   const timezoneOption = timezoneOptions.find(tz => tz.value === eventTimezone);
                   
-                  // Nếu không tìm thấy, hiển thị giá trị gốc
                   return timezoneOption ? timezoneOption.label : eventTimezone;
                 })()
               }
             </p>
 
-            {/* ✅ THÊM RECURRENCE DESCRIPTION Ở ĐÂY */}
             {selectedEvent.recurrence_description && (
               <div className={styles.recurrenceDescription}>
                 <p><strong>📅 Lịch lặp:</strong> {selectedEvent.recurrence_description}</p>
@@ -913,9 +948,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
 
             {(selectedEvent.recurrence || selectedEvent.recurringEventId) && (
               <div className={styles.repeatBlock}>
-                {/* LUÔN PARSE RECURRENCE DATA MỚI NHẤT */}
                 {(() => {
-                  // ❌ KHÔNG THỂ DÙNG ASYNC TRONG JSX - HIỂN THỊ TỪ NORMALIZED EVENT
                   const hasRecurrence = selectedEvent.recurrence && 
                     (Array.isArray(selectedEvent.recurrence) || selectedEvent.recurrence.trim() !== "");
                   
@@ -977,15 +1010,16 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                     zoom_link: selectedEvent.zoom,
                     meeting_id: selectedEvent.meeting_id || "",
                     passcode: selectedEvent.passcode || "",
-                    recurrence: recurrenceData.recurrenceType,  // ✅ DÙNG recurrenceType
-                    repeat_count: recurrenceData.repeatCount,        // ← SỬA Ở ĐÂY
-                    byday: recurrenceData.byday,                     // ← SỬA Ở ĐÂY
-                    bymonthday: recurrenceData.bymonthday,           // ← SỬA Ở ĐÂY
-                    bymonth: recurrenceData.bymonth,      
+                    recurrence: recurrenceData.recurrenceType,
+                    repeat_count: recurrenceData.repeatCount,
+                    byday: recurrenceData.byday,
+                    bymonthday: recurrenceData.bymonthday,
+                    bymonth: recurrenceData.bymonth,
                     start: formatForInput(selectedEvent.start?.dateTime || selectedEvent.start),
                     end: formatForInput(selectedEvent.end?.dateTime || selectedEvent.end),
                     timezone: selectedEvent.timezone || "Asia/Ho_Chi_Minh",
-                    recurrence_description: selectedEvent.recurrence_description || "", 
+                    recurrence_description: selectedEvent.recurrence_description || "",
+                    calendar_source: selectedEvent.calendar_source,
                   };
 
                   setNewEvent(editEventData);
@@ -1019,15 +1053,22 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       {showPopup && (
         <div className={styles.popupOverlay}>
           <div className={styles.popupBox} ref={popupRef}>
-            <h3>🗓️ {editingEvent ? `Chỉnh sửa: ${newEvent.title}` : "Thêm sự kiện mới"}</h3>
+            <div className={styles.popupHeader}>
+              <h3>🗓️ {editingEvent ? `Chỉnh sửa: ${newEvent.title}` : "Thêm sự kiện mới"}</h3>
+              {newEvent?.target_calendar && (
+                <div className={`${styles.calendarIndicator} ${
+                  newEvent?.hour_type === 'even' ? styles.indicatorEven : styles.indicatorOdd
+                }`}>
+                  ⚡ Sẽ lưu vào: {newEvent.target_calendar}
+                </div>
+              )}
+            </div>
 
-            <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px', padding: '5px', border: '1px solid #ccc', background: '#f9f9f9' }}>
-              <div><strong>DEBUG RECURRENCE STATE:</strong></div>
-              <div>recurrence: "{newEvent.recurrence}"</div>
-              <div>repeat_count: {newEvent.repeat_count}</div>
-              <div>byday: [{newEvent.byday?.join(", ") || "none"}]</div>
-              <div>bymonthday: [{newEvent.bymonthday?.join(", ") || "none"}]</div>
-              <div>bymonth: [{newEvent.bymonth?.join(", ") || "none"}]</div>
+            <div className={styles.debugInfo}>
+              <div><strong>DEBUG CALENDAR LOGIC:</strong></div>
+              <div>Giờ bắt đầu: {newEvent.start ? new Date(newEvent.start).getHours() : 'N/A'}h</div>
+              <div>Loại giờ: {newEvent?.hour_type || 'chưa xác định'} ({newEvent?.hour_type === 'even' ? 'chẵn' : 'lẻ'})</div>
+              <div>Calendar đích: {newEvent?.target_calendar || 'tự động'}</div>
             </div>
 
             <label>
@@ -1068,15 +1109,21 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
 
             <label>
               Chương trình:
-              <input
-                type="text"
+              <select
                 value={newEvent.program}
                 onChange={(e) => {
                   const updated = { ...newEvent, program: e.target.value };
                   updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${updated.program || ""}`.trim();
                   setNewEvent(updated);
                 }}
-              />
+                className={styles.programSelect}
+              >
+                {programOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label>
@@ -1117,8 +1164,25 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                 <input
                   type="datetime-local"
                   value={newEvent.start || ""}
-                  onChange={(e) => handleDateTimeChange('start', e.target.value)}
+                  onChange={(e) => {
+                    handleDateTimeChange('start', e.target.value);
+                    
+                    // ✅ CẬP NHẬT CALENDAR INDICATOR KHI GIỜ THAY ĐỔI
+                    const hourType = checkEvenOddHour(e.target.value);
+                    const targetCalendar = hourType === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ';
+                    
+                    setNewEvent(prev => ({
+                      ...prev,
+                      hour_type: hourType,
+                      target_calendar: targetCalendar
+                    }));
+                  }}
                 />
+                {newEvent.start && (
+                  <div className={styles.timeNote}>
+                    Giờ: {new Date(newEvent.start).getHours()}h → {newEvent?.hour_type === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ'}
+                  </div>
+                )}
               </div>
               <div className={styles.formGroup}>
                 <label>Kết thúc:</label>
@@ -1131,6 +1195,32 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
             </div>
 
             <label>
+              Múi giờ:
+              <select
+                value={newEvent?.timezone || "Asia/Ho_Chi_Minh"}
+                onChange={(e) => {
+                  const newTimezone = e.target.value;
+                  console.log("🔄 TIMEZONE CHANGED - BEFORE SETSTATE:", {
+                    from: newEvent?.timezone,
+                    to: newTimezone
+                  });
+                  
+                  setNewEvent(prev => {
+                    const updated = { ...prev, timezone: newTimezone };
+                    console.log("🔄 TIMEZONE CHANGED - AFTER SETSTATE:", updated.timezone);
+                    return updated;
+                  });
+                }}
+              >
+                {timezoneOptions.map((tz) => (
+                  <option key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
               Lặp lại:
               <select
                 value={newEvent.recurrence || ""}
@@ -1141,7 +1231,6 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                     ...prev,
                     recurrence: val,
                     repeat_count: val ? (prev.repeat_count > 1 ? prev.repeat_count : 2) : 1,
-                    // ✅ ĐẢM BẢO MẢNG LUÔN LÀ MẢNG
                     byday: Array.isArray(prev.byday) ? prev.byday : [],
                     bymonthday: Array.isArray(prev.bymonthday) ? prev.bymonthday : [],
                     bymonth: Array.isArray(prev.bymonth) ? prev.bymonth : [],
@@ -1171,31 +1260,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
               </label>
             )}
 
-            <label>
-              Múi giờ:
-              <select
-                value={newEvent?.timezone || "Asia/Ho_Chi_Minh"}
-                onChange={(e) => {
-                  const newTimezone = e.target.value;
-                  console.log("🔄 TIMEZONE CHANGED - BEFORE SETSTATE:", {
-                    from: newEvent?.timezone,
-                    to: newTimezone
-                  });
-                  
-                  setNewEvent(prev => {
-                    const updated = { ...prev, timezone: newTimezone };
-                    console.log("🔄 TIMEZONE CHANGED - AFTER SETSTATE:", updated.timezone);
-                    return updated;
-                  });
-                }}
-              >
-                {timezoneOptions.map((tz) => (
-                  <option key={tz.value} value={tz.value}>
-                    {tz.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            
 
             {newEvent.recurrence === "WEEKLY" && (
               <div className={styles.weeklyGroup}>
@@ -1284,14 +1349,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
               <button onClick={handleSave} className={styles.btnSave}>
                 {editingEvent ? "💾 Cập nhật" : "➕ Tạo mới"}
               </button>
-              {/* ✅ BUTTON DEBUG */}
-              <button 
-                type="button"
-                onClick={() => console.log("🔍 DEBUG BUTTON - CURRENT STATE:", newEvent)}
-                style={{background: 'orange'}}
-              >
-                🔍 Debug State
-              </button>
+              
               <button onClick={() => setShowPopup(false)} className={styles.btnCancel}>
                 Hủy
               </button>

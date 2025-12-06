@@ -112,5 +112,19 @@
     "meeting_id": "123",
     "passcode": "456",
     "classname": "Room 5G"
+  },
+  "g4gl3m5m899n9t1gbcsbdk6glc": {
+    "zoom_link": "https://chan.com",
+    "meeting_id": "111",
+    "passcode": "222",
+    "classname": "Room 10",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "0e251jna5l2vs4p6discvo6jvs": {
+    "zoom_link": "https://test",
+    "meeting_id": "111",
+    "passcode": "222",
+    "classname": "RoomL",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
   }
 }

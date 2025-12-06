@@ -167,3 +167,70 @@ body {
   color: #6c757d;
   margin-top: 4px;
 }
+
+/* frontend/src/pages/AdminSchedule.module.css */
+/* Thêm các style mới */
+
+.controlBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.calendarFilter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 20px;
+}
+
+.filterSelect {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  background: white;
+  font-size: 14px;
+  min-width: 200px;
+}
+
+.calendarInfo {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+  padding: 10px 15px;
+  background: #f0f7ff;
+  border-radius: 8px;
+  border: 1px solid #cce5ff;
+}
+
+.calendarBadgeOdd {
+  padding: 6px 12px;
+  background: #1a73e8;
+  color: white;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.calendarBadgeEven {
+  padding: 6px 12px;
+  background: #34a853;
+  color: white;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.calendarNote {
+  padding: 6px 12px;
+  background: #f8f9fa;
+  color: #666;
+  border-radius: 20px;
+  font-size: 14px;
+  border: 1px solid #dee2e6;
+}

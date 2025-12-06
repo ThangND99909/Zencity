@@ -219,6 +219,7 @@
   position: relative;
   overflow-y: auto;
   min-height: 100%;
+  height: 1440px; /* 24 giờ × 60px = 1440px */
 }
 
 /* TIME COLUMN */
@@ -226,22 +227,44 @@
   width: 70px;
   border-right: 1px solid #e0e0e0;
   text-align: right;
-  padding-top: 10px;
+  padding-top: 0;
   font-size: 11px;
   color: #70757a;
   background: #fff;
+  height: 1440px; /* Chiều cao cố định */
+}
+
+/* Time labels wrapper */
+.timeLabels {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .timeLabel {
   height: 60px;
   padding-right: 6px;
+  box-sizing: border-box;
+  
+  /* QUAN TRỌNG: Căn text lên TRÊN */
+  display: flex;
+  align-items: flex-start; /* Căn lên trên */
+  justify-content: flex-end; /* Căn phải */
+  padding-top: 0; /* Text sát mép trên */
+  
+  /* Giữ khoảng cách đều */
+  flex: 0 0 60px;
+  line-height: 1; /* Reset line-height */
+  position: relative;
 }
+
 
 /* EVENT COLUMN */
 .eventsColumn {
   flex: 1;
   position: relative;
   background: #fff;
+  height: 1440px; /* Chiều cao cố định */
 }
 
 .hourLines {
@@ -249,10 +272,13 @@
   left: 0;
   right: 0;
   top: 0;
+  height: 1440px; /* Chiều cao cố định */
 }
 .hourLine {
   height: 60px;
   border-bottom: 1px solid #f1f3f4;
+  box-sizing: border-box; /* Border tính vào height */
+  position: relative;
 }
 
 /* EVENT ITEM */
@@ -326,17 +352,6 @@
   }
 }
 
-.timeColumn {
-  width: 70px;
-  border-right: 1px solid #e0e0e0;
-  text-align: right;
-  padding-top: 10px;
-  font-size: 11px;
-  color: #70757a;
-  background: #fff;
-  position: relative;
-}
-
 .timezoneLabel {
   position: sticky;
   top: 0;
@@ -395,11 +410,11 @@
 
 .popupBox input {
   width: 100%;
-  padding: 6px 8px;
+  padding: 8px 10px;
   margin-top: 4px;
   border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 14px;
 }
 
 .popupActions {
@@ -534,3 +549,215 @@
   padding: 8px 12px;
   border: 1px solid #e0e0e0;
 }
+
+/* frontend/src/components/CalendarView.module.css */
+/* Thêm các style mới */
+
+.eventItemOdd {
+  border-left: 4px solid #1a73e8 !important;
+  background: rgba(26, 115, 232, 0.1) !important;
+}
+
+.eventItemEven {
+  border-left: 4px solid #34a853 !important;
+  background: rgba(52, 168, 83, 0.1) !important;
+}
+
+.calendarBadge {
+  font-size: 12px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+.eventTime {
+  font-size: 11px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.detailHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+.calendarBadgeDetail {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.badgeOdd {
+  background: #1a73e8;
+  color: white;
+}
+
+.badgeEven {
+  background: #34a853;
+  color: white;
+}
+
+.popupHeader {
+  margin-bottom: 15px;
+}
+
+.calendarIndicator {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.indicatorOdd {
+  background: rgba(26, 115, 232, 0.2);
+  border: 2px solid #1a73e8;
+  color: #1a73e8;
+}
+
+.indicatorEven {
+  background: rgba(52, 168, 83, 0.2);
+  border: 2px solid #34a853;
+  color: #34a853;
+}
+
+.debugInfo {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+.timeNote {
+  font-size: 12px;
+  color: #1a73e8;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.programSelect {
+  width: 100%;
+  padding: 10px 12px;
+  margin-top: 5px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.programSelect:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+}
+
+@media (max-width: 768px) {
+  .programSelect {
+    font-size: 16px;
+  }
+}
+
+/* Reset và đồng bộ tất cả form controls */
+.popupBox input[type="text"],
+.popupBox input[type="url"],
+.popupBox input[type="datetime-local"],
+.popupBox input[type="number"],
+.popupBox select,
+.popupBox textarea {
+  width: 100%;
+  padding: 8px 10px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: 'Roboto', 'Segoe UI', sans-serif;
+  box-sizing: border-box;
+  line-height: 1.4;
+  background: #ffffff;
+  color: #374151;
+  transition: all 0.15s ease;
+}
+
+/* Focus state chung */
+.popupBox input:focus,
+.popupBox select:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.1);
+}
+
+/* Select specific */
+.popupBox select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  padding-right: 32px;
+  background-color: white;
+}
+
+/* Override programSelect specific padding */
+.programSelect {
+  padding: 8px 10px !important; /* Dùng chung padding */
+}
+
+/* Label consistency */
+.popupBox label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+/* Form group adjustments */
+.popupBox .formGroup {
+  flex: 1;
+  min-width: 0; /* Quan trọng: cho phép co lại đều */
+}
+
+/* Đảm bảo form row chia đều */
+.popupBox .formRow {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+}
+
+.popupBox .formRow .formGroup {
+  flex: 1;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .popupBox .formRow {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .popupBox input[type="text"],
+  .popupBox input[type="url"],
+  .popupBox input[type="datetime-local"],
+  .popupBox select {
+    font-size: 16px; /* Better for mobile touch */
+  }
+}
+
+.timeLabel:first-child {
+  visibility: hidden;
+}
+
+.timeLabel:first-child {
+  height: 60px;
+  line-height: 60px;
+  border-bottom: 1px solid transparent;
+}
+

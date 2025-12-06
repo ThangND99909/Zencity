@@ -1,6 +1,7 @@
+# main.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, validator
-from calendar_crud import list_events, create_event, update_event, delete_event, get_event  # ✅ THÊM get_event
+from calendar_crud import list_events, create_event, update_event, delete_event, get_event
 from fastapi.middleware.cors import CORSMiddleware
 from ai_agent import get_schedule_suggestion
 from datetime import datetime
@@ -8,8 +9,7 @@ from typing import Optional, List
 from recurrence_helper import build_recurrence_rule
 from ai_agent import get_schedule_suggestion, ai_check_schedule_conflict
 import pytz
-from recurrence_helper import build_recurrence_description  # ✅ IMPORT HÀM MỚI
-
+from recurrence_helper import build_recurrence_description
 
 app = FastAPI()
 
@@ -67,10 +67,14 @@ class ConflictCheckRequest(BaseModel):
 
 # ---------------- Routes ----------------
 @app.get("/classes")
-def get_classes():
+def get_classes(calendar_type: str = "both"):
+    """
+    Lấy classes từ các calendar
+    calendar_type: odd, even, both
+    """
     try:
-        events = list_events()
-        print(f"📊 Returning {len(events)} events to frontend")
+        events = list_events(calendar_type)
+        print(f"📊 Returning {len(events)} events from calendar: {calendar_type}")
         
         # ✅ THÊM DEBUG ĐỂ KIỂM TRA RECURRENCE DATA
         recurring_events = [e for e in events if e.get('recurrence')]
@@ -95,7 +99,7 @@ def get_single_event(event_id: str):
             raise HTTPException(status_code=400, detail="Invalid event ID")
             
         print(f"🔍 Fetching single event: {event_id}")
-        event = get_event(event_id)  # ✅ GỌI HÀM get_event TỪ calendar_crud
+        event = get_event(event_id)
         
         if event:
             print(f"✅ Found event: {event.get('summary')}")
@@ -115,7 +119,6 @@ def add_class(class_info: ClassInfo):
     try:
         # 🔍 DEBUG REQUEST BODY RAW
         import json
-        from fastapi import Request
         from fastapi.encoders import jsonable_encoder
         
         print(f"🎯 RAW REQUEST BODY: {jsonable_encoder(class_info)}")
@@ -142,6 +145,7 @@ def add_class(class_info: ClassInfo):
         print(f"🕐 DEBUG TIMEZONE IN add_class:")
         print(f"  - class_info.timezone: '{class_info.timezone}'")
         print(f"  - data['timezone']: '{data.get('timezone')}'")
+        
         # Gọi hàm build recurrence
         recurrence_rule = build_recurrence_rule(data)
         
@@ -151,12 +155,12 @@ def add_class(class_info: ClassInfo):
         data["rrule"] = [recurrence_rule] if recurrence_rule else None
         print(f"📦 Final data with rrule: {data}")
 
-        # Gọi hàm build recurrence (giờ trả về dict)
+        # Gọi hàm build recurrence description
         recurrence_description = build_recurrence_description(data)
         
         if recurrence_rule:
-            data["rrule"] = [recurrence_rule]  # RRULE string cho Google Calendar
-            data["recurrence_description"] = recurrence_description  # Mô tả cho hiển thị
+            data["rrule"] = [recurrence_rule]
+            data["recurrence_description"] = recurrence_description
             print(f"📦 Final data with rrule: {data['rrule']}")
             print(f"📝 Recurrence description: {data['recurrence_description']}")
         
@@ -178,11 +182,13 @@ def edit_class(event_id: str, class_info: ClassInfo):
         print(f"  - class_info.timezone: '{class_info.timezone}'")
         print(f"  - data['timezone']: '{data.get('timezone')}'")
         print(f"  - class_info.dict()['timezone']: '{class_info.dict().get('timezone')}'")
+        
         # DÙNG HÀM MỚI - THÊM DEBUG
         print("🔄 Building recurrence rule for update...")
         print(f"🕐 DEBUG BEFORE build_recurrence_description:")
         print(f"  - data['timezone']: '{data.get('timezone')}'")
         print(f"  - data keys: {list(data.keys())}")
+        
         recurrence_rule = build_recurrence_rule(data)
         recurrence_description = build_recurrence_description(data)
         print(f"📆 Final RRULE for Google: {recurrence_rule}")
@@ -211,7 +217,7 @@ def remove_class(event_id: str):
 @app.get("/ai/suggest")
 def ai_suggest(teacher: str = None, duration_hours: int = 1):
     try:
-        classes = list_events()
+        classes = list_events('both')  # Lấy từ cả 2 calendars
         return get_schedule_suggestion(classes, teacher, duration_hours)
     except Exception as e:
         print(f"❌ Error in ai_suggest: {e}")
@@ -223,8 +229,8 @@ def api_check_conflict(request: ConflictCheckRequest):
     try:
         print(f"🔄 Smart conflict check for: {request.teacher}")
         
-        # Lấy tất cả classes hiện có
-        all_classes = list_events()
+        # Lấy tất cả classes hiện có từ cả 2 calendars
+        all_classes = list_events('both')
         
         # 1. TRADITIONAL CHECK NHANH TRƯỚC
         from ai_agent import traditional_conflict_check
@@ -252,10 +258,10 @@ def api_check_conflict(request: ConflictCheckRequest):
             # Kết hợp kết quả: conflicts từ traditional + suggestions từ AI
             result = {
                 'has_conflict': True,
-                'conflicts': traditional_result['conflicts'],  # Dùng traditional (nhanh, chính xác)
-                'suggestions': ai_result.get('suggestions', []),  # Lấy suggestions từ AI
+                'conflicts': traditional_result['conflicts'],
+                'suggestions': ai_result.get('suggestions', []),
                 'ai_analysis': ai_result.get('ai_analysis', 'AI đề xuất thời gian thay thế'),
-                'check_type': 'ai_suggestions'  # Đánh dấu có dùng AI
+                'check_type': 'ai_suggestions'
             }
             
         else:
@@ -272,7 +278,7 @@ def api_check_conflict(request: ConflictCheckRequest):
         # Fallback về traditional
         from ai_agent import traditional_conflict_check
         return traditional_conflict_check(
-            list_events(),
+            list_events('both'),
             request.teacher, 
             request.start, 
             request.end
@@ -307,6 +313,9 @@ def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "service": "ZenAI Tutor Admin API"
+        "service": "ZenAI Tutor Admin API",
+        "calendars": {
+            "odd": "configured",
+            "even": "configured"
+        }
     }
-

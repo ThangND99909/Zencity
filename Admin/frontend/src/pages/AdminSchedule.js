@@ -1,3 +1,4 @@
+// frontend/src/pages/AdminSchedule.js
 import React, { useEffect, useState } from "react";
 import { getClasses, addClass, updateClass, deleteClass, suggestClass, getEvent } from "../services/api";
 import ClassTable from "../components/ClassTable";
@@ -15,46 +16,40 @@ export default function AdminSchedule() {
   const [editLoading, setEditLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [calendarFilter, setCalendarFilter] = useState('both'); // 'odd', 'even', 'both'
 
-  const loadClasses = async () => {
+  const loadClasses = async (filter = calendarFilter) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getClasses();
       
-      // ✅ THÊM DEBUG CHI TIẾT RECURRENCE DATA
+      // ✅ THÊM PARAMETER calendar_type
+      const data = await getClasses(filter);
+      
+      // ✅ THÊM DEBUG CHI TIẾT RECURRENCE VÀ CALENDAR DATA
       console.log("📦 FULL API RESPONSE STRUCTURE:", data);
       
       if (data && data.length > 0) {
+        // Phân tích calendar source
+        const oddEvents = data.filter(event => event._calendar_source === 'odd');
+        const evenEvents = data.filter(event => event._calendar_source === 'even');
+        const unknownEvents = data.filter(event => !event._calendar_source);
+        
+        console.log("📊 CALENDAR STATS:", {
+          totalEvents: data.length,
+          oddCalendar: oddEvents.length,
+          evenCalendar: evenEvents.length,
+          unknownSource: unknownEvents.length
+        });
+        
         // Tìm events có recurrence
         const eventsWithRecurrence = data.filter(event => event.recurrence);
         const recurringInstances = data.filter(event => event.recurringEventId);
         
         console.log("🔄 RECURRENCE STATS:", {
-          totalEvents: data.length,
           masterEvents: eventsWithRecurrence.length,
           instances: recurringInstances.length
         });
-        
-        if (eventsWithRecurrence.length > 0) {
-          const sampleEvent = eventsWithRecurrence[0];
-          console.log("🔍 SAMPLE RECURRING EVENT:", {
-            id: sampleEvent.id,
-            summary: sampleEvent.summary,
-            recurrence: sampleEvent.recurrence,
-            recurrenceType: typeof sampleEvent.recurrence
-          });
-        }
-        
-        if (recurringInstances.length > 0) {
-          const sampleInstance = recurringInstances[0];
-          console.log("🔍 SAMPLE RECURRING INSTANCE:", {
-            id: sampleInstance.id,
-            summary: sampleInstance.summary,
-            recurringEventId: sampleInstance.recurringEventId,
-            hasRecurrence: !!sampleInstance.recurrence
-          });
-        }
       }
       
       setClasses(data);
@@ -133,7 +128,7 @@ export default function AdminSchedule() {
         bymonth: data.bymonth || [],
         timezone: data.timezone || "Asia/Ho_Chi_Minh"
       });
-      await loadClasses();
+      await loadClasses(calendarFilter);
       setCreatingClass(null);
       showMessage("Class added successfully!", "success");
     } catch (err) {
@@ -167,7 +162,7 @@ export default function AdminSchedule() {
         timezone: data.timezone || "Asia/Ho_Chi_Minh"
       });
 
-      await loadClasses();
+      await loadClasses(calendarFilter);
       setEditingClass(null);
       showMessage("Class updated successfully!", "success");
     } catch (err) {
@@ -183,7 +178,7 @@ export default function AdminSchedule() {
     if (window.confirm("Are you sure you want to delete this class?")) {
       try {
         await deleteClass(id);
-        await loadClasses();
+        await loadClasses(calendarFilter);
         showMessage("Class deleted successfully!", "success");
       } catch (err) {
         showMessage("Failed to delete class: " + err.message);
@@ -197,7 +192,7 @@ export default function AdminSchedule() {
   };
 
   const handleRefresh = () => {
-    loadClasses();
+    loadClasses(calendarFilter);
     showMessage("Classes refreshed!", "success");
   };
 
@@ -295,7 +290,6 @@ export default function AdminSchedule() {
         }
       } catch (error) {
         console.error("❌ Failed to fetch master event:", error);
-        // Không throw error, chỉ tiếp tục với giá trị mặc định
       }
     }
 
@@ -310,6 +304,7 @@ export default function AdminSchedule() {
       summary: cls.summary,
       recurrence: cls.recurrence,
       recurringEventId: cls.recurringEventId,
+      calendarSource: cls._calendar_source
     });
 
     const { zoomLink, meetingId, passcode, program, teacher, classname } = 
@@ -343,6 +338,7 @@ export default function AdminSchedule() {
       byday: recurrenceData.byday,
       bymonthday: recurrenceData.bymonthday,
       bymonth: recurrenceData.bymonth,
+      calendar_source: cls._calendar_source || 'odd', // Thêm calendar source
     };
 
     // ✅ THÊM TIMEZONE CHỈ KHI ĐƯỢC YÊU CẦU
@@ -360,10 +356,6 @@ export default function AdminSchedule() {
       setEditLoading(true);
       console.log("✏️ Starting edit process for:", cls.summary);
       
-      //const editData = await prepareEditData(cls);
-
-      
-      // ✅ CLASSFORM: GỌI VỚI TIMEZONE = true
       const editData = await prepareEditData(cls, true);
       setEditingClass(editData);
       setCreatingClass(null);
@@ -443,6 +435,24 @@ export default function AdminSchedule() {
       )}
 
       <div className={styles.controlBar}>
+        {/* ✅ THÊM CALENDAR FILTER */}
+        <div className={styles.calendarFilter}>
+          <label>📅 Calendar: </label>
+          <select 
+            value={calendarFilter}
+            onChange={(e) => {
+              const newFilter = e.target.value;
+              setCalendarFilter(newFilter);
+              loadClasses(newFilter);
+            }}
+            className={styles.filterSelect}
+          >
+            <option value="both">📊 Cả hai Calendar</option>
+            <option value="odd">📘 Calendar Lẻ (Giờ lẻ: 1,3,5...)</option>
+            <option value="even">📗 Calendar Chẵn (Giờ chẵn: 2,4,6...)</option>
+          </select>
+        </div>
+
         <button
           className={`${styles.btn} ${showCalendar ? styles.btnSecondary : styles.btnPrimary}`}
           onClick={() => {
@@ -454,32 +464,31 @@ export default function AdminSchedule() {
           {showCalendar ? "📅 Hide Calendar" : "📅 Show Calendar"}
         </button>
 
-        <button className={`${styles.btn} ${styles.btnSuccess}`} onClick={handleAISuggest}>
-          🤖 AI Suggest Time
-        </button>
+        
         <button className={`${styles.btn} ${styles.btnInfo}`} onClick={handleRefresh}>
           🔄 Refresh
         </button>
         
-        {/* ✅ THÊM DEBUG BUTTON */}
-        <button 
-          className={`${styles.btn} ${styles.btnWarning}`} 
-          onClick={() => {
-            if (classes.length > 0) {
-              const recurringEvents = classes.filter(e => e.recurrence || e.recurringEventId);
-              console.log("🔍 DEBUG: All recurring events", recurringEvents);
-              alert(`Found ${recurringEvents.length} recurring events. Check console.`);
-            }
-          }}
-        >
-          🔍 Debug Recurrence
-        </button>
+        
         
         {showForm && (
           <button className={`${styles.btn} ${styles.btnDanger}`} onClick={handleCancelEdit}>
             ❌ Cancel {isEditing ? "Edit" : "Create"}
           </button>
         )}
+      </div>
+
+      {/* ✅ THÊM CALENDAR INFO BANNER */}
+      <div className={styles.calendarInfo}>
+        <div className={styles.calendarBadgeOdd}>
+          📘 Calendar Lẻ: {classes.filter(e => e._calendar_source === 'odd').length} events
+        </div>
+        <div className={styles.calendarBadgeEven}>
+          📗 Calendar Chẵn: {classes.filter(e => e._calendar_source === 'even').length} events
+        </div>
+        <div className={styles.calendarNote}>
+          ℹ️ Events sẽ tự động được phân vào calendar dựa trên giờ bắt đầu (chẵn/lẻ)
+        </div>
       </div>
 
       <div className={styles.mainContent}>
@@ -498,13 +507,14 @@ export default function AdminSchedule() {
               onDeleteEvent={(event) => handleDelete(event.id)}
               onDateSelect={handleDateSelect}
               highlightedSlot={creatingClass}
+              calendarFilter={calendarFilter}
             />
           </div>
         ) : (
           <div className={styles.tableWrapper}>
             {showForm && (
               <div className={styles.formBox}>
-                <h2>{isEditing ? "✏️ Edit Class" : "➕ Add New Class"}</h2>
+                
                 <ClassForm
                   initialData={formData}
                   onSubmit={isEditing ? handleUpdate : handleAdd}
@@ -517,7 +527,12 @@ export default function AdminSchedule() {
               {classes.length === 0 ? (
                 <div className={styles.emptyBox}>No classes found. Create your first class!</div>
               ) : (
-                <ClassTable classes={classes} onEdit={handleEdit} onDelete={handleDelete} />
+                <ClassTable 
+                  classes={classes} 
+                  onEdit={handleEdit} 
+                  onDelete={handleDelete} 
+                  calendarFilter={calendarFilter}
+                />
               )}
             </div>
           </div>
@@ -525,7 +540,10 @@ export default function AdminSchedule() {
       </div>
 
       <div className={styles.footer}>
-        📊 Total: {classes.length} classes • {showForm && (isEditing ? "Editing Mode" : "Creating Mode")} • Last updated: {new Date().toLocaleTimeString()}
+        📊 Total: {classes.length} classes • 
+        Calendar: {calendarFilter === 'both' ? 'Both' : calendarFilter === 'odd' ? 'ODD' : 'EVEN'} • 
+        {showForm && (isEditing ? "Editing Mode" : "Creating Mode")} • 
+        Last updated: {new Date().toLocaleTimeString()}
       </div>
     </div>
   );
