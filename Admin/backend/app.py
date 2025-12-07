@@ -204,12 +204,12 @@ def edit_class(event_id: str, class_info: ClassInfo):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/classes/{event_id}")
-def remove_class(event_id: str):
+def remove_class(event_id: str, delete_mode: str = 'this'):
     try:
         if not event_id or event_id == "undefined":
             raise HTTPException(status_code=400, detail="Invalid event ID")
-        print(f"🗑️ Deleting class ID: {event_id}")
-        return delete_event(event_id)
+        print(f"🗑️ Deleting class ID: {event_id}, mode: {delete_mode}")
+        return delete_event(event_id, delete_mode)
     except Exception as e:
         print(f"❌ Error in remove_class: {e}")
         raise HTTPException(status_code=500, detail=str(e))

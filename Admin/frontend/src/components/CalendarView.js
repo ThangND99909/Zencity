@@ -5,6 +5,8 @@ import { parseZoomInfo } from "../utils/sanitizeDescription";
 import { getEvent } from "../services/api";
 import { checkScheduleConflict } from "../services/api";
 import { getTimezones } from "../services/api";
+import DeleteConfirmationModal from "./DeleteConfirmationModal";
+import EventContextMenu from "./EventContextMenu";
 
 export default function CalendarView({ events, onEventClick, onDateSelect, onCreateEvent, onDeleteEvent, calendarFilter }) {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -17,6 +19,17 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   const popupRef = useRef(null);
   const eventsRef = useRef(null);
   const today = new Date();
+
+  // ✅ Thêm các state mới cho context menu và delete modal
+  const [contextMenu, setContextMenu] = useState({
+    visible: false,
+    position: { x: 0, y: 0 },
+    event: null,
+    isRecurring: false
+  });
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState(null);
 
   const [myCalendars, setMyCalendars] = useState([
     { id: 1, name: "Calendar Lẻ (Giờ lẻ)", color: "#1a73e8", checked: true },
@@ -63,6 +76,139 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
 
   const timeSlots = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, "0")}:00`);
 
+  // ✅ HÀM XỬ LÝ CLICK CHUỘT PHẢI - THÊM VÀO ĐÂY
+  const handleEventRightClick = (event, normalizedEvent, ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    
+    console.log("🖱️ Right-click on event:", normalizedEvent);
+    
+    // Kiểm tra xem event có lặp lại không
+    const isRecurring = normalizedEvent.recurrence || 
+                       normalizedEvent.recurringEventId || 
+                       (normalizedEvent.recurrence && 
+                       Array.isArray(normalizedEvent.recurrence) && 
+                       normalizedEvent.recurrence.length > 0);
+    
+    setContextMenu({
+      visible: true,
+      position: { x: ev.clientX, y: ev.clientY },
+      event: normalizedEvent,
+      isRecurring: isRecurring
+    });
+  };
+
+  // ✅ HÀM ĐÓNG CONTEXT MENU
+  const handleCloseContextMenu = () => {
+    setContextMenu({
+      visible: false,
+      position: { x: 0, y: 0 },
+      event: null,
+      isRecurring: false
+    });
+  };
+
+  // ✅ HÀM XỬ LÝ DELETE TỪ CONTEXT MENU
+  const handleDeleteFromContextMenu = (event) => {
+    console.log("🖱️ DELETE FROM CONTEXT MENU:", {
+      eventId: event.id,
+      eventName: event.name,
+      hasRecurrence: event.recurrence,
+      hasRecurringEventId: event.recurringEventId,
+      isRecurring: event.recurrence || event.recurringEventId
+    });
+    
+    // **THAY ĐỔI: Truyền object thay vì chỉ event**
+    setEventToDelete({
+      ...event,
+      _deleteMode: 'this'  // Mặc định, sẽ được update bởi modal
+    });
+    setShowDeleteModal(true);
+    handleCloseContextMenu();
+  };
+
+  // Và sửa handleConfirmDelete:
+
+  const handleConfirmDelete = async (deleteMode = 'this') => {
+    if (!eventToDelete || !eventToDelete.id) {
+      alert("Không thể xóa: thiếu ID sự kiện");
+      setShowDeleteModal(false);
+      return;
+    }
+    
+    try {
+      // **THAY ĐỔI: Tạo object delete request với mode**
+      const deleteRequest = {
+        ...eventToDelete,
+        deleteMode: deleteMode  // Thêm deleteMode vào object
+      };
+      
+      console.log("📦 FINAL DELETE REQUEST OBJECT:", deleteRequest);
+      
+      // Gọi hàm xóa từ props
+      await onDeleteEvent?.(deleteRequest);
+      
+      setShowDeleteModal(false);
+      setEventToDelete(null);
+      
+      alert("✅ Đã xóa sự kiện thành công!");
+      
+    } catch (error) {
+      console.error("❌ Error deleting event:", error);
+      alert("❌ Lỗi khi xóa sự kiện: " + error.message);
+      setShowDeleteModal(false);
+    }
+  };
+
+  // ✅ HÀM XỬ LÝ EDIT TỪ CONTEXT MENU
+  const handleEditFromContextMenu = async (event) => {
+    if (!event.id) {
+      alert("Không thể chỉnh sửa: thiếu ID sự kiện");
+      return;
+    }
+    
+    try {
+      const recurrenceData = await parseRecurrenceFromEvent(event);
+
+      const editEventData = {
+        id: event.id,
+        title: event.name,
+        class_name: event.class_name || event.classname || "",
+        teacher: event.teacher,
+        program: event.program,
+        zoom_link: event.zoom,
+        meeting_id: event.meeting_id || "",
+        passcode: event.passcode || "",
+        recurrence: recurrenceData.recurrenceType,
+        repeat_count: recurrenceData.repeatCount,
+        byday: recurrenceData.byday,
+        bymonthday: recurrenceData.bymonthday,
+        bymonth: recurrenceData.bymonth,
+        start: formatForInput(event.start?.dateTime || event.start),
+        end: formatForInput(event.end?.dateTime || event.end),
+        timezone: event.timezone || "Asia/Ho_Chi_Minh",
+        recurrence_description: event.recurrence_description || "",
+        calendar_source: event.calendar_source,
+      };
+
+      setNewEvent(editEventData);
+      setEditingEvent(event);
+      setShowDetailPopup(false);
+      setShowPopup(true);
+      
+    } catch (error) {
+      console.error("❌ Error preparing edit:", error);
+      alert("Không thể chuẩn bị dữ liệu chỉnh sửa: " + error.message);
+    }
+  };
+
+  // ✅ HÀM XỬ LÝ VIEW DETAILS TỪ CONTEXT MENU
+  const handleViewDetailsFromContextMenu = (event) => {
+    setSelectedEvent(event);
+    setShowDetailPopup(true);
+  };
+
+  
   useEffect(() => {
     const fetchTimezones = async () => {
       try {
@@ -172,15 +318,16 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     const { zoomLink, teacher, program, classname, meetingId, passcode } = parseZoomInfo(raw);
     const eventId = event.id || event._id || event.eventId || event.class_id;
 
-    console.log("🔍 NORMALIZE EVENT - CALENDAR CHECK:", {
+    console.log("🔍 NORMALIZE EVENT - TYPE CHECK:", {
       eventId,
-      calendarSource: event._calendar_source,
-      hasRecurrenceArray: Array.isArray(event.recurrence),
-      recurrenceArray: event.recurrence,
+      isInstance: event._is_instance,
+      isMaster: event._is_master,
+      hasRecurrence: !!event.recurrence,
       recurringEventId: event.recurringEventId
     });
 
-    // ✅ THÊM: Extract timezone từ Google Calendar event
+    // ✅ ƯU TIÊN: Nếu là instance, dùng data từ instance
+    // Nếu là master, dùng data từ master
     const eventTimezone = event.start?.timeZone || event.end?.timeZone || "Asia/Ho_Chi_Minh";
     
     // ✅ XÁC ĐỊNH CALENDAR TYPE VÀ MÀU SẮC
@@ -210,6 +357,10 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       calendar_name: calendarName,
       calendar_color: calendarColor,
       calendar_badge: calendarBadge,
+      // ✅ THÊM INSTANCE INFO
+      is_instance: event._is_instance || false,
+      is_master: event._is_master || false,
+      master_event_id: event._master_event_id || event.recurringEventId
     };
   };
 
@@ -840,6 +991,8 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                       setSelectedEvent(normalizedEvent);
                       setShowDetailPopup(true);
                     }}
+                    onContextMenu={(ev) => handleEventRightClick(e, normalizedEvent, ev)}
+                    title={`Nhấn chuột phải để xóa: ${normalizedEvent.name}`}
                   >
                     <div className={styles.eventName}>
                       {normalizedEvent.name}
@@ -865,6 +1018,32 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
           </div>
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu.visible && contextMenu.event && (
+        <EventContextMenu
+          position={contextMenu.position}
+          event={contextMenu.event}
+          isRecurring={contextMenu.isRecurring}
+          onClose={handleCloseContextMenu}
+          onDelete={handleDeleteFromContextMenu}
+          onEdit={handleEditFromContextMenu}
+          onViewDetails={handleViewDetailsFromContextMenu}
+        />
+      )}
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && eventToDelete && (
+        <DeleteConfirmationModal
+          event={eventToDelete}
+          isRecurring={eventToDelete.recurrence || eventToDelete.recurringEventId}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => {
+            setShowDeleteModal(false);
+            setEventToDelete(null);
+          }}
+        />
+      )}
 
       {showDetailPopup && selectedEvent && (
         <div className={styles.popupOverlay}>

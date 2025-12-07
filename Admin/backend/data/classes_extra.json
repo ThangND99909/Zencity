@@ -126,5 +126,19 @@
     "passcode": "222",
     "classname": "RoomL",
     "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
+  },
+  "ag9rgchcu24vjbqb67ekd5elf8": {
+    "zoom_link": "fds",
+    "meeting_id": "fds",
+    "passcode": "fsd",
+    "classname": "Room 1",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
+  },
+  "ag9rgchcu24vjbqb67ekd5elf8_20251208T100000Z": {
+    "zoom_link": "fds",
+    "meeting_id": "",
+    "passcode": "fsd",
+    "classname": "Room 1",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
   }
 }

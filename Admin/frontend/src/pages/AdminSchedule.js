@@ -170,19 +170,70 @@ export default function AdminSchedule() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!id) {
-      showMessage("Cannot delete: Missing ID");
-      return;
-    }
-    if (window.confirm("Are you sure you want to delete this class?")) {
-      try {
-        await deleteClass(id);
-        await loadClasses(calendarFilter);
-        showMessage("Class deleted successfully!", "success");
-      } catch (err) {
-        showMessage("Failed to delete class: " + err.message);
+  const handleDelete = async (eventData) => {
+    try {
+      console.log("🔥 HANDLE DELETE CALLED - FULL DATA:", eventData);
+      
+      // **FIX: Xử lý cả string và object**
+      let eventId;
+      let deleteMode = 'this';
+      
+      if (typeof eventData === 'string') {
+        // Trường hợp cũ: chỉ có ID
+        eventId = eventData;
+        console.log("⚠️ Legacy string format, using default deleteMode: 'this'");
+      } else if (typeof eventData === 'object') {
+        // Trường hợp mới: có object với deleteMode
+        eventId = eventData.id;
+        deleteMode = eventData.deleteMode || 'this';
+        
+        console.log("✅ Object format detected:", {
+          eventId,
+          deleteMode,
+          hasRecurrence: eventData.recurrence,
+          hasRecurringEventId: eventData.recurringEventId
+        });
       }
+      
+      if (!eventId) {
+        showMessage("Cannot delete: Missing ID");
+        return;
+      }
+      
+      console.log("🎯 FINAL DELETE PARAMS:", { eventId, deleteMode });
+      
+      // Xác nhận với người dùng dựa trên mode
+      let confirmationMessage = "";
+      
+      switch(deleteMode) {
+        case 'all':
+          confirmationMessage = "Bạn có chắc muốn xóa TOÀN BỘ chuỗi sự kiện lặp lại?";
+          break;
+        case 'following':
+          confirmationMessage = "Bạn có chắc muốn xóa sự kiện này VÀ TẤT CẢ sự kiện sau nó trong chuỗi?";
+          break;
+        default:
+          confirmationMessage = "Bạn có chắc chắn muốn xóa sự kiện này?";
+      }
+      
+      if (!window.confirm(confirmationMessage)) {
+        return;
+      }
+      
+      // Gọi API xóa với mode tương ứng
+      const result = await deleteClass(eventId, deleteMode);
+      
+      console.log("🗑️ Delete result:", result);
+      
+      // Reload data
+      await loadClasses(calendarFilter);
+      
+      // Hiển thị thông báo thành công
+      showMessage("✅ Đã xóa sự kiện thành công!", "success");
+      
+    } catch (err) {
+      console.error("❌ Delete error:", err);
+      showMessage("Failed to delete class: " + err.message);
     }
   };
 
@@ -504,7 +555,7 @@ export default function AdminSchedule() {
                   handleAdd(event);
                 }
               }}
-              onDeleteEvent={(event) => handleDelete(event.id)}
+              onDeleteEvent={handleDelete}
               onDateSelect={handleDateSelect}
               highlightedSlot={creatingClass}
               calendarFilter={calendarFilter}

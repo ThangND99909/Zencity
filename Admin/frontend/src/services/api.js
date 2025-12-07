@@ -83,12 +83,35 @@ export const updateClass = async (id, data) => {
   }
 };
 
-export const deleteClass = async (id) => {
+export const deleteClass = async (id, deleteMode = 'this') => {
   try {
-    await apiClient.delete(`/classes/${id}`);
+    console.log("📤 API DELETE REQUEST:", {
+      id,
+      deleteMode,
+      url: `/classes/${id}`,
+      params: { delete_mode: deleteMode }
+    });
+    
+    // Gửi deleteMode trong query params
+    const response = await apiClient.delete(`/classes/${id}`, {
+      params: { 
+        delete_mode: deleteMode 
+      }
+    });
+    
+    console.log(`✅ Delete successful:`, response.data);
+    return response.data;
+    
   } catch (error) {
     console.error("Delete class error:", error);
-    throw new Error(`Failed to delete class: ${error.message}`);
+    
+    // Detailed error message
+    const errorMessage = error.response?.data?.detail || 
+                        error.response?.data?.message || 
+                        error.message || 
+                        "Failed to delete class";
+    
+    throw new Error(errorMessage);
   }
 };
 

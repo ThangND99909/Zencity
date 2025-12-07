@@ -1,0 +1,72 @@
+/* frontend/src/components/EventContextMenu.module.css */
+
+.contextMenu {
+  position: fixed;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 240px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.contextMenuHeader {
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #eee;
+  font-weight: bold;
+  color: #333;
+  border-radius: 8px 8px 0 0;
+}
+
+.contextMenuSubtitle {
+  font-size: 12px;
+  color: #666;
+  font-weight: normal;
+  margin-top: 4px;
+}
+
+.contextMenuDivider {
+  height: 1px;
+  background: #eee;
+  margin: 4px 0;
+}
+
+.contextMenuItem {
+  padding: 10px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background-color 0.2s;
+  font-size: 14px;
+}
+
+.contextMenuItem:hover {
+  background-color: #f5f5f5;
+}
+
+.deleteItem {
+  color: #d32f2f;
+  border-top: 1px solid #eee;
+  font-weight: bold;
+}
+
+.deleteItem:hover {
+  background-color: #ffebee;
+}
+
+.recurringNote {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: #666;
+  background: #fff8e1;
+  border-top: 1px solid #ffecb3;
+  border-radius: 0 0 8px 8px;
+}
