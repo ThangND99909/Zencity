@@ -251,17 +251,18 @@ def calculate_remaining_events(rrule_str, master_start, delete_dt):
         
 def stop_recurrence_at_instance(master_event, instance_start_str):
     """
-    Stop recurrence at a specific instance using UNTIL
-    Returns updated recurrence rules that stop BEFORE the instance
+    Google Calendar 'following' mode: Thêm UNTIL để dừng series TRƯỚC instance
     """
     try:
         from datetime import datetime, timedelta
         import re
         
-        # Parse instance start time
+        print(f"🎯 [GOOGLE] Adding UNTIL for 'following' mode")
+        
+        # Parse instance time
         instance_dt = datetime.fromisoformat(instance_start_str.replace('Z', '+00:00'))
         
-        # Set UNTIL to 1 second BEFORE the instance (so instance is not included)
+        # Stop 1 second BEFORE instance
         until_dt = instance_dt - timedelta(seconds=1)
         until_str = until_dt.strftime('%Y%m%dT%H%M%SZ')
         
@@ -272,31 +273,33 @@ def stop_recurrence_at_instance(master_event, instance_start_str):
             if 'RRULE:' in rule:
                 rrule_str = rule.replace('RRULE:', '')
                 
-                # Remove any existing COUNT or UNTIL
-                rrule_str = re.sub(r'COUNT=\d+', '', rrule_str)
+                # Remove existing UNTIL and COUNT
                 rrule_str = re.sub(r'UNTIL=[\dTZ]+', '', rrule_str)
+                rrule_str = re.sub(r'COUNT=\d+', '', rrule_str)
                 
                 # Clean up
                 rrule_str = re.sub(r';;', ';', rrule_str)
                 rrule_str = rrule_str.strip(';')
                 
-                # Add UNTIL to stop BEFORE the instance
-                new_rrule = f'{rrule_str};UNTIL={until_str}'
-                updated_recurrence.append(f'RRULE:{new_rrule}')
+                # Add UNTIL
+                if rrule_str:
+                    new_rrule = f'{rrule_str};UNTIL={until_str}'
+                else:
+                    new_rrule = f'UNTIL={until_str}'
                 
-                print(f"🔄 Updated RRULE with UNTIL={until_str} (stops before instance)")
+                updated_recurrence.append(f'RRULE:{new_rrule}')
+                print(f"✅ Added UNTIL={until_str}")
                 
             elif rule.startswith('EXDATE:'):
                 # Keep existing EXDATEs
                 updated_recurrence.append(rule)
             else:
-                # Skip other rules for simplicity
-                continue
+                updated_recurrence.append(rule)
         
         return updated_recurrence
         
     except Exception as e:
-        print(f"❌ Error in stop_recurrence_at_instance: {e}")
+        print(f"❌ Error adding UNTIL: {e}")
         return master_event.get('recurrence', [])
     
 def parse_and_update_recurrence_rule(rrule_str, stop_before_date_str):
@@ -328,3 +331,218 @@ def parse_and_update_recurrence_rule(rrule_str, stop_before_date_str):
     except Exception as e:
         print(f"❌ Error parsing RRULE: {e}")
         return rrule_str  # Return original on error
+    
+def calculate_remaining_count(rrule_str, master_start, stop_before):
+    """
+    Tính COUNT còn lại khi dừng tại thời điểm cụ thể
+    """
+    try:
+        from dateutil import rrule
+        from datetime import datetime
+        
+        rr = rrule.rrulestr(rrule_str, dtstart=master_start)
+        occurrences = list(rr.before(datetime.fromisoformat(stop_before.replace('Z', '+00:00')), inc=True))
+        return len(occurrences)
+    except:
+        # Fallback logic
+        return 1
+    
+def calculate_remaining_occurrences(master_event, stop_before_instance_start):
+    """
+    Tính số events còn lại trong series từ instance này trở đi
+    """
+    try:
+        from dateutil import rrule
+        from datetime import datetime
+        
+        recurrence = master_event.get('recurrence', [])
+        if not recurrence:
+            return 0
+            
+        # Tìm RRULE
+        rrule_str = None
+        for rule in recurrence:
+            if 'RRULE:' in rule:
+                rrule_str = rule.replace('RRULE:', '')
+                break
+                
+        if not rrule_str:
+            return 0
+            
+        # Parse master start
+        master_start_str = master_event.get('start', {}).get('dateTime')
+        if not master_start_str:
+            return 0
+            
+        master_start = datetime.fromisoformat(master_start_str.replace('Z', '+00:00'))
+        stop_before = datetime.fromisoformat(stop_before_instance_start.replace('Z', '+00:00'))
+        
+        # Tạo rrule object
+        rr = rrule.rrulestr(rrule_str, dtstart=master_start)
+        
+        # Đếm events từ instance này trở đi
+        occurrences = list(rr)
+        remaining = 0
+        for occ in occurrences:
+            if occ >= stop_before:
+                remaining += 1
+                
+        return remaining
+        
+    except Exception as e:
+        print(f"⚠️ Error calculating remaining occurrences: {e}")
+        # Fallback: trả về COUNT từ RRULE nếu có
+        import re
+        count_match = re.search(r'COUNT=(\d+)', rrule_str)
+        if count_match:
+            total = int(count_match.group(1))
+            # Ước tính: giả sử instance này là thứ 2 trong series
+            return max(1, total - 1)
+        return 1
+    
+# Thêm vào recurrence_utils.py
+def add_exdate_to_master(master_event, instance_start_str):
+    """
+    Google Calendar 'this' mode: Thêm EXDATE để loại trừ instance
+    FIX: Luôn dùng UTC format cho EXDATE
+    """
+    try:
+        from datetime import datetime
+        
+        print(f"🎯 [GOOGLE] Adding EXDATE for 'this' mode")
+        print(f"🕐 Instance to exclude: {instance_start_str}")
+        
+        # Parse instance time
+        instance_dt = datetime.fromisoformat(instance_start_str.replace('Z', '+00:00'))
+        
+        # ⚠️ FIX: LUÔN DÙNG UTC FORMAT (YYYYMMDDTHHMMSSZ)
+        exdate_str = instance_dt.strftime('%Y%m%dT%H%M%SZ')
+        print(f"✅ EXDATE (UTC format): {exdate_str}")
+        
+        recurrence = master_event.get('recurrence', [])
+        if not recurrence:
+            print("⚠️ Master has no recurrence rules")
+            return []
+        
+        updated_recurrence = []
+        exdate_added = False
+        
+        for rule in recurrence:
+            if rule.startswith('EXDATE;'):
+                # ⚠️ FIX: Remove TZID và chuyển sang UTC format
+                # Tách phần sau EXDATE;
+                if 'TZID=' in rule:
+                    # Format: EXDATE;TZID=Asia/Ho_Chi_Minh:20251209T150000
+                    parts = rule.split(':')
+                    if len(parts) >= 2:
+                        old_exdate = parts[-1]
+                        # Chuyển sang UTC nếu cần
+                        print(f"🔄 Converting TZID EXDATE to UTC: {old_exdate}")
+                else:
+                    # Đã là UTC format
+                    existing = rule.replace('EXDATE;', '').strip()
+                    existing_dates = [d.strip() for d in existing.split(',') if d.strip()]
+                    
+                    if exdate_str not in existing_dates:
+                        existing_dates.append(exdate_str)
+                        new_rule = f'EXDATE:{",".join(existing_dates)}'
+                        updated_recurrence.append(new_rule)
+                        print(f"✅ Added to EXDATE: {exdate_str}")
+                    else:
+                        updated_recurrence.append(rule)
+                        print(f"ℹ️ EXDATE already exists")
+                    exdate_added = True
+            elif rule.startswith('EXDATE:'):
+                # UTC format đúng
+                existing = rule.replace('EXDATE:', '').strip()
+                existing_dates = [d.strip() for d in existing.split(',') if d.strip()]
+                
+                if exdate_str not in existing_dates:
+                    existing_dates.append(exdate_str)
+                    new_rule = f'EXDATE:{",".join(existing_dates)}'
+                    updated_recurrence.append(new_rule)
+                    print(f"✅ Added to EXDATE: {exdate_str}")
+                else:
+                    updated_recurrence.append(rule)
+                    print(f"ℹ️ EXDATE already exists")
+                exdate_added = True
+            elif 'RRULE:' in rule:
+                updated_recurrence.append(rule)
+            else:
+                updated_recurrence.append(rule)
+        
+        # Nếu không có EXDATE rule, thêm mới với UTC format
+        if not exdate_added:
+            updated_recurrence.append(f'EXDATE:{exdate_str}')
+            print(f"✅ Created new EXDATE (UTC): {exdate_str}")
+        
+        # ⚠️ QUAN TRỌNG: Đảm bảo RRULE vẫn ở đó
+        if not any('RRULE:' in r for r in updated_recurrence):
+            # Thêm lại RRULE nếu bị mất
+            for rule in recurrence:
+                if 'RRULE:' in rule:
+                    updated_recurrence.append(rule)
+                    print(f"🔄 Added back RRULE")
+                    break
+        
+        print(f"📋 Updated recurrence: {updated_recurrence}")
+        return updated_recurrence
+        
+    except Exception as e:
+        print(f"❌ Error adding EXDATE: {e}")
+        import traceback
+        traceback.print_exc()
+        return master_event.get('recurrence', [])
+    
+def calculate_new_count(master_event, instance_start_str):
+    """
+    Calculate new COUNT for 'following' mode
+    """
+    try:
+        from datetime import datetime
+        import re
+        
+        master_start_str = master_event.get('start', {}).get('dateTime')
+        if not master_start_str:
+            return 1
+        
+        master_start = datetime.fromisoformat(master_start_str.replace('Z', '+00:00'))
+        instance_start = datetime.fromisoformat(instance_start_str.replace('Z', '+00:00'))
+        
+        days_diff = (instance_start - master_start).days
+        
+        recurrence = master_event.get('recurrence', [])
+        for rule in recurrence:
+            if 'RRULE:' in rule:
+                rrule = rule.replace('RRULE:', '')
+                
+                # Get frequency
+                freq_match = re.search(r'FREQ=(\w+)', rrule, re.IGNORECASE)
+                if not freq_match:
+                    return 1
+                
+                freq = freq_match.group(1).upper()
+                
+                # Get current COUNT
+                count_match = re.search(r'COUNT=(\d+)', rrule, re.IGNORECASE)
+                if count_match:
+                    total = int(count_match.group(1))
+                    
+                    # Estimate remaining events
+                    if freq == 'DAILY':
+                        remaining = max(1, total - days_diff)
+                    elif freq == 'WEEKLY':
+                        remaining = max(1, total - (days_diff // 7))
+                    elif freq == 'MONTHLY':
+                        remaining = max(1, total - (days_diff // 30))
+                    else:
+                        remaining = max(1, total - 1)
+                    
+                    print(f"📊 New COUNT: {remaining} (from {total})")
+                    return remaining
+        
+        return 1
+        
+    except Exception as e:
+        print(f"⚠️ Error calculating count: {e}")
+        return 1

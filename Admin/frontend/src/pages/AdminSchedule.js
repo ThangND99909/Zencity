@@ -136,37 +136,53 @@ export default function AdminSchedule() {
     }
   };
 
+  // frontend/src/pages/AdminSchedule.js
+
   const handleUpdate = async (data) => {
     try {
       const id = data.id || editingClass?.id;
-      if (!id) {
-        showMessage("Cannot update: Missing event ID.");
-        return;
-      }
-
-      await updateClass(id, {
-        name: data.name,
-        classname: data.classname || "",
-        teacher: data.teacher || "",
-        zoom_link: data.zoom_link || "",
-        program: data.program || "",
-        start: data.start,
-        end: data.end,
-        meeting_id: data.meeting_id || "",
-        passcode: data.passcode || "",
-        recurrence: data.recurrence || "",
-        repeat_count: data.repeat_count || 1,
-        byday: data.byday || [],
-        bymonthday: data.bymonthday || [],
-        bymonth: data.bymonth || [],
-        timezone: data.timezone || "Asia/Ho_Chi_Minh"
+      const editMode = data.edit_mode || data.editMode || 'this';
+      
+      
+      Object.keys(data).forEach(key => {
+        if (key.startsWith('_') || key.includes('mode') || key.includes('instance')) {
+          console.log(`   - ${key}: ${JSON.stringify(data[key])}`);
+        }
       });
 
+      // GOOGLE CALENDAR: If 'all' mode on instance, use master ID
+      const targetId = id;
+      
+      
+      // ĐẢM BẢO EDIT_MODE ĐƯỢC TRUYỀN ĐÚNG
+      const updateData = {
+        ...data,
+        edit_mode: editMode  // CRITICAL! Đảm bảo tên đúng
+      };
+      
+      
+
+      // Call API with edit_mode
+      await updateClass(targetId, updateData);
+      
       await loadClasses(calendarFilter);
       setEditingClass(null);
-      showMessage("Class updated successfully!", "success");
+      
+      // Success message theo mode
+      let message = "Cập nhật thành công!";
+      if (editMode === 'following') {
+        message = "Đã cập nhật sự kiện này và các sự kiện tiếp theo!";
+      }
+      
+      showMessage(message, "success");
+      
     } catch (err) {
-      showMessage("Failed to update class: " + err.message);
+      console.error("❌ Update error details:", {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status
+      });
+      showMessage("Lỗi cập nhật: " + err.message);
     }
   };
 

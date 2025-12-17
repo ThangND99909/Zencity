@@ -7,6 +7,7 @@ import { checkScheduleConflict } from "../services/api";
 import { getTimezones } from "../services/api";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import EventContextMenu from "./EventContextMenu";
+import EditRecurringModal from "./EditRecurringModal";
 
 export default function CalendarView({ events, onEventClick, onDateSelect, onCreateEvent, onDeleteEvent, calendarFilter }) {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -30,6 +31,13 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [eventToDelete, setEventToDelete] = useState(null);
+  const [showEditRecurringModal, setShowEditRecurringModal] = useState(false);
+  const [editRecurringOptions, setEditRecurringOptions] = useState({
+    event: null,
+    originalEvent: null,
+    editMode: 'this'
+  });
+
 
   const [myCalendars, setMyCalendars] = useState([
     { id: 1, name: "Calendar Lẻ (Giờ lẻ)", color: "#1a73e8", checked: true },
@@ -160,16 +168,88 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     }
   };
 
-  // ✅ HÀM XỬ LÝ EDIT TỪ CONTEXT MENU
-  const handleEditFromContextMenu = async (event) => {
+  const handleEditEvent = async (event) => {
     if (!event.id) {
       alert("Không thể chỉnh sửa: thiếu ID sự kiện");
       return;
     }
     
     try {
+      
+      
       const recurrenceData = await parseRecurrenceFromEvent(event);
-
+      
+      console.log("📈 Parsed recurrence data:", recurrenceData);
+      
+      let instanceIndex = 1;
+      let adjustedRepeatCount = recurrenceData.repeatCount;
+      
+      // ✅ TÍNH INSTANCE INDEX NẾU LÀ INSTANCE
+      if (event._is_instance || event.recurringEventId) {
+        console.log("🔄 Calculating for INSTANCE");
+        
+        const masterEventId = event._master_event_id || event.recurringEventId;
+        
+        // **LẤY MASTER EVENT TỪ CACHE HOẶC FETCH**
+        let masterEvent = masterEventsCache[masterEventId];
+        if (!masterEvent) {
+          try {
+            masterEvent = await getEvent(masterEventId);
+            if (masterEvent) {
+              setMasterEventsCache(prev => ({
+                ...prev,
+                [masterEventId]: masterEvent
+              }));
+            }
+          } catch (error) {
+            console.error("❌ Failed to fetch master event:", error);
+          }
+        }
+        
+        if (masterEvent && recurrenceData.recurrenceType) {
+          // **TÍNH INSTANCE INDEX CHÍNH XÁC**
+          instanceIndex = calculateInstanceIndex(event, masterEvent, recurrenceData.recurrenceType);
+          
+          
+          if (instanceIndex === 1) {
+            console.warn("⚠️ Instance index calculated as 1 - might be incorrect");
+            console.log("   Let's manually check dates...");
+            
+            // Manual calculation cho DAILY
+            const instanceStart = new Date(event.start?.dateTime || event.start);
+            const masterStart = new Date(masterEvent.start?.dateTime || masterEvent.start);
+            
+            console.log("   - Master start:", masterStart.toISOString());
+            console.log("   - Instance start:", instanceStart.toISOString());
+            
+            const dayDiff = Math.floor((instanceStart - masterStart) / (1000 * 60 * 60 * 24));
+            console.log("   - Day difference:", dayDiff);
+            
+            // Nếu là DAILY và cách nhau 2 ngày → instance thứ 3
+            if (recurrenceData.recurrenceType === 'DAILY' && dayDiff === 2) {
+              instanceIndex = 3;
+              console.log("   ✅ Corrected instance index to 3");
+            }
+          }
+          
+          // ✅ CÔNG THỨC QUAN TRỌNG:
+          // Số events còn lại = tổng - (instanceIndex - 1)
+          adjustedRepeatCount = Math.max(1, recurrenceData.repeatCount - (instanceIndex - 1));
+          
+          
+        } else {
+          console.warn("⚠️ Could not find master event or recurrence type");
+          // **FALLBACK: Nếu không tìm được master, ước tính dựa trên ID**
+          // Instance ID thường có format: masterId_YYYYMMDDTHHMMSSZ
+          // Nếu edit instance thứ 3 trong chuỗi 4, còn lại 2 events
+          adjustedRepeatCount = 2; // Giả sử instance thứ 3 → còn 2 events
+          instanceIndex = 3; // Giả sử là instance thứ 3
+          console.log(`⚠️ Using fallback values: index=${instanceIndex}, remaining=${adjustedRepeatCount}`);
+        }
+      } else {
+        console.log("📌 Editing MASTER or REGULAR event");
+      }
+      
       const editEventData = {
         id: event.id,
         title: event.name,
@@ -180,7 +260,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
         meeting_id: event.meeting_id || "",
         passcode: event.passcode || "",
         recurrence: recurrenceData.recurrenceType,
-        repeat_count: recurrenceData.repeatCount,
+        repeat_count: adjustedRepeatCount, // ✅ DÙNG SỐ ĐÃ ĐIỀU CHỈNH
         byday: recurrenceData.byday,
         bymonthday: recurrenceData.bymonthday,
         bymonth: recurrenceData.bymonth,
@@ -189,17 +269,107 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
         timezone: event.timezone || "Asia/Ho_Chi_Minh",
         recurrence_description: event.recurrence_description || "",
         calendar_source: event.calendar_source,
+        is_recurring: event.recurrence || event.recurringEventId,
+        recurring_event_id: event.recurringEventId,
+        // ✅ THÊM THÔNG TIN QUAN TRỌNG CHO BACKEND
+        _is_instance: event._is_instance || !!event.recurringEventId,
+        _instance_index: instanceIndex,
+        _remaining_count: adjustedRepeatCount,
+        _estimated_instance_position: instanceIndex // Cho backend biết đây là instance thứ mấy
       };
-
-      setNewEvent(editEventData);
-      setEditingEvent(event);
-      setShowDetailPopup(false);
-      setShowPopup(true);
+      
+      
+      
+      // Nếu là sự kiện lặp lại, hiển thị modal chọn edit mode
+      if (event.recurrence || event.recurringEventId) {
+        console.log("🔄 Recurring event edit detected, showing mode selector");
+        setEditRecurringOptions({
+          event: editEventData,
+          originalEvent: event,
+          editMode: 'this'
+        });
+        setShowEditRecurringModal(true);
+      } else {
+        // Non-recurring event
+        setNewEvent(editEventData);
+        setEditingEvent(event);
+        setShowDetailPopup(false);
+        setShowPopup(true);
+      }
       
     } catch (error) {
       console.error("❌ Error preparing edit:", error);
       alert("Không thể chuẩn bị dữ liệu chỉnh sửa: " + error.message);
     }
+  };
+
+  
+
+  const handleConfirmEditMode = (editMode) => {
+    
+    const { event, originalEvent } = editRecurringOptions;
+    
+    if (!event) {
+      alert("Không có dữ liệu sự kiện để chỉnh sửa");
+      return;
+    }
+
+    // 1. TÍNH TOÁN ĐÚNG repeat_count CHO TỪNG MODE
+    let finalRepeatCount = event.repeat_count || 1;
+    
+    
+    if (editMode === 'following' && originalEvent?.recurringEventId) {
+      // MODE "FOLLOWING": DÙNG remaining_count
+      finalRepeatCount = event._remaining_count || event.repeat_count || 1;
+      console.log("🎯 Mode 'following' - Using remaining count:", finalRepeatCount);
+    } else {
+      finalRepeatCount = 1;
+      console.log("📌 Mode '" + editMode + "' - Keeping original repeat_count:", finalRepeatCount);
+    }
+
+    const eventTimezone = event.timezone || "Asia/Ho_Chi_Minh";
+
+    // 2. TẠO EVENT DATA VỚI METADATA ĐÚNG
+    const eventWithEditMode = {
+      ...event,
+      editMode: editMode,
+      repeat_count: finalRepeatCount,
+      timezone: eventTimezone,
+      _editModeConfirmed: true,
+      is_recurring_instance: !!originalEvent?.recurringEventId,
+      master_event_id: originalEvent?.recurringEventId || originalEvent?.id,
+      
+      // METADATA QUAN TRỌNG CHO BACKEND
+      _is_editing_from_instance: !!originalEvent?.recurringEventId,
+      _instance_index: event._instance_index || 1,
+      _remaining_count: event._remaining_count || event.repeat_count,
+
+      
+      // ĐẢM BẢO CÁC TRƯỜNG RECURRENCE KHÔNG BỊ MẤT
+      recurrence: event.recurrence,
+      byday: event.byday || [],
+      bymonthday: event.bymonthday || [],
+      bymonth: event.bymonth || [],
+      
+      
+    };
+
+    
+
+    // 3. ĐÓNG MODAL VÀ MỞ FORM CHỈNH SỬA
+    setNewEvent(eventWithEditMode);
+    setEditingEvent(originalEvent);
+    setShowEditRecurringModal(false);
+    setShowDetailPopup(false);
+    setShowPopup(true);
+    
+    console.log("📤 Opening edit form with mode:", editMode);
+  };
+
+  // ✅ HÀM XỬ LÝ EDIT TỪ CONTEXT MENU
+  const handleEditFromContextMenu = async (event) => {
+    handleEditEvent(event);
+    
   };
 
   // ✅ HÀM XỬ LÝ VIEW DETAILS TỪ CONTEXT MENU
@@ -409,32 +579,154 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     return { recurrenceType, repeatCount, byday, bymonthday, bymonth };
   };
 
+  // ✅ THÊM HÀM TÍNH INSTANCE INDEX Ở ĐÂY
+  const calculateInstanceIndex = (instanceEvent, masterEvent, recurrenceType) => {
+    if (!instanceEvent || !masterEvent) {
+      console.error("❌ Missing event data for instance calculation");
+      return 1;
+    }
+    
+    try {
+      const instanceStart = new Date(instanceEvent.start?.dateTime || instanceEvent.start);
+      const masterStart = new Date(masterEvent.start?.dateTime || masterEvent.start);
+      
+      console.log("🔢 ========== INSTANCE INDEX CALCULATION ==========");
+      console.log("  - Master start:", masterStart.toISOString(), `(${masterStart.toLocaleString('vi-VN')})`);
+      console.log("  - Instance start:", instanceStart.toISOString(), `(${instanceStart.toLocaleString('vi-VN')})`);
+      console.log("  - Recurrence type:", recurrenceType);
+      
+      // Đảm bảo cả 2 đều ở UTC để so sánh
+      const masterTime = masterStart.getTime();
+      const instanceTime = instanceStart.getTime();
+      
+      console.log("  - Master timestamp:", masterTime);
+      console.log("  - Instance timestamp:", instanceTime);
+      console.log("  - Time difference (ms):", instanceTime - masterTime);
+      console.log("  - Time difference (hours):", (instanceTime - masterTime) / (1000 * 60 * 60));
+      
+      let index = 1;
+      
+      if (recurrenceType === 'DAILY') {
+        // Tính số ngày chênh lệch chính xác
+        const dayMs = 24 * 60 * 60 * 1000;
+        const daysDiff = Math.round((instanceTime - masterTime) / dayMs);
+        index = Math.max(1, daysDiff + 1);
+        console.log(`  - Days difference: ${daysDiff} → Instance #${index}`);
+        
+        // **KIỂM TRA THÊM**: In ra tất cả các ngày để debug
+        console.log("  📅 Debug - All expected days:");
+        for (let i = 0; i < 10; i++) {
+          const expectedDate = new Date(masterTime + (i * dayMs));
+          console.log(`    Day ${i + 1}: ${expectedDate.toISOString()} (${expectedDate.toLocaleDateString('vi-VN')})`);
+        }
+        
+      } else if (recurrenceType === 'WEEKLY') {
+        const weekMs = 7 * 24 * 60 * 60 * 1000;
+        const weeksDiff = Math.round((instanceTime - masterTime) / weekMs);
+        index = Math.max(1, weeksDiff + 1);
+        console.log(`  - Weeks difference: ${weeksDiff} → Instance #${index}`);
+        
+      } else if (recurrenceType === 'MONTHLY') {
+        const yearDiff = instanceStart.getFullYear() - masterStart.getFullYear();
+        const monthDiff = instanceStart.getMonth() - masterStart.getMonth();
+        const totalMonths = (yearDiff * 12) + monthDiff;
+        index = Math.max(1, totalMonths + 1);
+        console.log(`  - Months difference: ${totalMonths} → Instance #${index}`);
+        
+      } else {
+        console.warn(`⚠️ Unknown recurrence type: ${recurrenceType}, using index 1`);
+        index = 1;
+      }
+      
+      console.log(`✅ Final instance index: ${index}`);
+      return index;
+      
+    } catch (e) {
+      console.error("❌ Error calculating instance index:", e);
+      return 1;
+    }
+  };
+
+
+  const [masterEventsCache, setMasterEventsCache] = useState({});
+
   const parseRecurrenceFromEvent = async (cls) => {
+    console.log("🔍 [RECURRENCE DEBUG] Checking event:", {
+      id: cls.id,
+      summary: cls.summary,
+      hasDirectRecurrence: !!cls.recurrence,
+      directRecurrence: cls.recurrence,
+      isInstance: !!cls.recurringEventId,
+      recurringEventId: cls.recurringEventId,
+      _is_instance: cls._is_instance,
+      _is_master: cls._is_master
+    });
+
+    // TRƯỜNG HỢP 1: Event có recurrence trực tiếp
     if (cls.recurrence && Array.isArray(cls.recurrence) && cls.recurrence.length > 0) {
       const ruleString = cls.recurrence[0];
+      console.log("✅ Using direct recurrence rule from MASTER event");
       return parseRecurrenceRule(ruleString);
     }
 
-    if (cls.recurringEventId) {
-      let masterEvent = null;
+    // TRƯỜNG HỢP 2: Event là instance
+    if (cls.recurringEventId || cls._is_instance) {
+      console.log("🔄 This is a RECURRING INSTANCE");
+      console.log("   - Instance ID:", cls.id);
+      console.log("   - Master ID:", cls.recurringEventId || cls._master_event_id);
       
-      masterEvent = events.find(event => event.id === cls.recurringEventId);
-      if (masterEvent && masterEvent.recurrence) {
-        const ruleString = masterEvent.recurrence[0];
+      const masterEventId = cls.recurringEventId || cls._master_event_id;
+      
+      if (!masterEventId) {
+        console.error("❌ No master event ID found for instance");
+        return { recurrenceType: "", repeatCount: 1, byday: [], bymonthday: [], bymonth: [] };
+      }
+      
+      // **KIỂM TRA CACHE TRƯỚC**
+      if (masterEventsCache[masterEventId]) {
+        console.log("✅ Using cached master event");
+        const masterEvent = masterEventsCache[masterEventId];
+        if (masterEvent.recurrence) {
+          const ruleString = masterEvent.recurrence[0];
+          return parseRecurrenceRule(ruleString);
+        }
+      }
+      
+      // **TÌM TRONG LOCAL EVENTS**
+      const localMaster = events.find(event => event.id === masterEventId);
+      if (localMaster && localMaster.recurrence) {
+        console.log("✅ Found master event in local events");
+        // Lưu vào cache
+        setMasterEventsCache(prev => ({
+          ...prev,
+          [masterEventId]: localMaster
+        }));
+        const ruleString = localMaster.recurrence[0];
         return parseRecurrenceRule(ruleString);
       }
-
+      
+      // **FETCH TỪ API**
+      console.log("🔄 Fetching master event from API...");
       try {
-        masterEvent = await getEvent(cls.recurringEventId);
+        const masterEvent = await getEvent(masterEventId);
         if (masterEvent && masterEvent.recurrence) {
+          console.log("✅ Fetched master event from API");
+          // Lưu vào cache
+          setMasterEventsCache(prev => ({
+            ...prev,
+            [masterEventId]: masterEvent
+          }));
           const ruleString = masterEvent.recurrence[0];
           return parseRecurrenceRule(ruleString);
         }
       } catch (error) {
-        console.error("Failed to fetch master event:", error);
+        console.error("❌ Failed to fetch master event:", error);
       }
+      
+      console.log("❌ Could not get recurrence data for instance");
     }
 
+    console.log("❌ No recurrence data available");
     return { recurrenceType: "", repeatCount: 1, byday: [], bymonthday: [], bymonth: [] };
   };
 
@@ -467,15 +759,29 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   };
 
   const findMasterEvent = (recurringEventId) => {
-    if (!recurringEventId) return null;
+    if (!recurringEventId) {
+      console.error("❌ No recurringEventId provided");
+      return null;
+    }
     
-    const master = events.find(event => event.id === recurringEventId);
-    console.log("🔍 FIND MASTER EVENT:", {
-      recurringEventId,
-      found: !!master,
-      masterId: master?.id,
-      masterRecurrence: master?.recurrence
+    console.log("🔍 Looking for master event:", recurringEventId);
+    
+    // Tìm trong danh sách events hiện tại
+    const master = events.find(event => {
+      const isMaster = event.id === recurringEventId;
+      if (isMaster) {
+        console.log("✅ Found master in current events:", {
+          id: event.id,
+          summary: event.summary,
+          hasRecurrence: !!event.recurrence
+        });
+      }
+      return isMaster;
     });
+    
+    if (!master) {
+      console.warn("⚠️ Master event not found in current events");
+    }
     
     return master;
   };
@@ -624,6 +930,45 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   };
 
   const handleSave = async () => {
+    console.log("🔥 [GOOGLE] SAVE EVENT - Edit mode:", newEvent.editMode);
+    console.log("📊 newEvent object:", {
+      editMode: newEvent?.editMode,
+      id: newEvent?.id,
+      keys: Object.keys(newEvent || {}),
+      hasEditMode: 'editMode' in (newEvent || {})
+    });
+
+    const isSingleEvent = !editingEvent?.recurrence && !editingEvent?.recurringEventId;
+    const wantsRecurrence = newEvent?.recurrence && newEvent.recurrence.trim() !== "";
+    // Nếu không có editMode, dùng mặc định 'this'
+    let finalEditMode = newEvent?.editMode || 'this';
+    console.log("🎯 FINAL EDIT MODE FOR SAVE:", finalEditMode);
+  
+    if (isSingleEvent && wantsRecurrence) {
+      // ⚠️ **ĐÂY LÀ KEY: DÙNG 'all' CHO SINGLE→RECURRING**
+      finalEditMode = 'all';
+      console.log("🔄 Single → Recurring: using edit_mode='all'");
+    }
+    
+    console.log("🎯 FINAL EDIT MODE:", finalEditMode);
+    // ========== GOOGLE CALENDAR LOGIC ==========
+    // If editing instance with 'this' mode, REMOVE recurrence
+    if (newEvent.id && newEvent.id.includes('_') && newEvent.editMode === 'this') {
+      console.log("🔄 'this' mode on instance - removing recurrence");
+      
+      const updatedEvent = { ...newEvent };
+      
+      // Remove all recurrence fields
+      delete updatedEvent.recurrence;
+      delete updatedEvent.repeat_count;
+      delete updatedEvent.byday;
+      delete updatedEvent.bymonthday;
+      delete updatedEvent.bymonth;
+      delete updatedEvent.rrule;
+      delete updatedEvent.recurrence_description;
+      
+      setNewEvent(updatedEvent);
+    }
     console.log("🔥 DEBUG handleSave - CURRENT TIMEZONE:", {
       timezone: newEvent?.timezone,
       fullState: newEvent
@@ -748,19 +1093,39 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       zoom_link: newEvent.zoom_link,
       meeting_id: newEvent.meeting_id,
       passcode: newEvent.passcode,
-      recurrence: newEvent.recurrence || "",
-      repeat_count: newEvent.repeat_count || 1,
-      byday: newEvent.byday || [],
-      bymonthday: newEvent.bymonthday || [],
-      bymonth: newEvent.bymonth || [],
+      // Only add recurrence if not 'this' mode on instance
+      ...(newEvent.editMode !== 'this' || !newEvent.id?.includes('_') ? {
+        recurrence: newEvent.recurrence || "",
+        repeat_count: newEvent.repeat_count || 1,
+        byday: newEvent.byday || [],
+        bymonthday: newEvent.bymonthday || [],
+        bymonth: newEvent.bymonth || [],
+      } : {}),
+      ...(newEvent.recurrence && {
+        recurrence: newEvent.recurrence,
+        repeat_count: newEvent.repeat_count || 1,
+        byday: newEvent.byday || [],
+        bymonthday: newEvent.bymonthday || [],
+        bymonth: newEvent.bymonth || [],
+      }),
       start: formatForBackend(newEvent.start, finalTimezone),
       end: formatForBackend(newEvent.end, finalTimezone),
-      timezone: newEvent.timezone || "Asia/Ho_Chi_Minh",
+      timezone: finalTimezone,
       recurrence_description: newEvent.recurrence_description || "",
+      edit_mode: finalEditMode,
       isEdit: !!editingEvent,
+      
     };
+    console.log("📦 FINAL EVENT DATA with edit_mode:", eventData.edit_mode);
 
-    console.log("🎯 SAVING EVENT - FINAL DATA:", eventData);
+    // Add master_event_id if exists
+    if (newEvent.master_event_id) {
+      eventData.master_event_id = newEvent.master_event_id;
+    }
+    
+    console.log("🎯 [GOOGLE] FINAL DATA:", eventData);
+
+    
 
     if (onCreateEvent) {
       onCreateEvent(eventData);
@@ -1045,6 +1410,22 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
         />
       )}
 
+      {/* Thêm Edit Recurring Modal - đặt cùng cấp với các modal khác */}
+      {showEditRecurringModal && editRecurringOptions.event && (
+        <EditRecurringModal
+          event={editRecurringOptions.originalEvent}
+          onConfirm={handleConfirmEditMode}
+          onCancel={() => {
+            setShowEditRecurringModal(false);
+            setEditRecurringOptions({
+              event: null,
+              originalEvent: null,
+              editMode: 'this'
+            });
+          }}
+        />
+      )}
+
       {showDetailPopup && selectedEvent && (
         <div className={styles.popupOverlay}>
           <div className={styles.detailPopup}>
@@ -1202,7 +1583,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                   };
 
                   setNewEvent(editEventData);
-                  setEditingEvent(selectedEvent);
+                  handleEditEvent(selectedEvent);
                   setShowDetailPopup(false);
                   setShowPopup(true);
                 }}

@@ -75,11 +75,37 @@ export const addClass = async (data) => {
 
 export const updateClass = async (id, data) => {
   try {
-    const res = await apiClient.put(`/classes/${id}`, data);
+    
+    // QUAN TRỌNG: Lấy edit_mode từ ĐÚNG nơi
+    const editMode = data.edit_mode || data.editMode || 'this';
+    
+    const importantKeys = ['_is_editing_from_instance','_remaining_count', '_instance_index', 'master_event_id'];
+    importantKeys.forEach(key => {
+      if (data[key] !== undefined) {
+        console.log(`   - ${key}: ${data[key]}`);
+      }
+    });
+    // Tạo query params
+    const params = new URLSearchParams();
+    params.append('edit_mode', editMode);
+    if (data._is_editing_from_instance !== undefined) {
+      params.append('_is_editing_from_instance', data._is_editing_from_instance);
+    }
+    
+    
+    const url = `/classes/${id}${params.toString() ? '?' + params.toString() : ''}`;
+    console.log("🔗 Final URL:", url);
+    
+    // Gửi request
+    console.log("🚀 Sending PUT request...");
+    const res = await apiClient.put(url, data);
+    
+    console.log("✅ Update successful");
     return res.data;
+    
   } catch (error) {
-    console.error("Update class error:", error);
-    throw new Error(`Failed to update class: ${error.message}`);
+    console.error("❌ Update error:", error);
+    throw error;
   }
 };
 

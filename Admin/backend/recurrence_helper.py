@@ -1,10 +1,6 @@
+# backend/recurrence_helper.py
+
 def build_recurrence_rule(class_info):
-    """
-    Build recurrence rule cho Google Calendar - CHỈ TRẢ VỀ RRULE STRING
-    """
-    print(f"🔧 build_recurrence_rule called with:")
-    print(f"   class_info['recurrence']: '{class_info.get('recurrence')}'")
-    print(f"   class_info['timezone']: '{class_info.get('timezone')}'")
     
     freq = class_info.get("recurrence", "").upper().strip()
     print(f"   Extracted freq: '{freq}'")
@@ -16,9 +12,10 @@ def build_recurrence_rule(class_info):
     rrule_parts = [f"FREQ={freq}"]
     print(f"   Initial rules: {rrule_parts}")
 
-    # COUNT - số lần lặp
+    # COUNT - số lần lặp 
     repeat_count = class_info.get("repeat_count", 1)
-    print(f"   repeat_count: {repeat_count}")
+    print(f"   repeat_count (after fix): {repeat_count}")
+    
     if repeat_count > 0:
         rrule_parts.append(f"COUNT={repeat_count}")
         print(f"   Added COUNT: {rrule_parts}")

@@ -170,29 +170,16 @@ def add_class(class_info: ClassInfo):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/classes/{event_id}")
-def edit_class(event_id: str, class_info: ClassInfo):
+def edit_class(event_id: str, class_info: ClassInfo, edit_mode: str = 'this'):
     try:
         if not event_id or event_id == "undefined":
             raise HTTPException(status_code=400, detail="Invalid event ID")
-        print(f"📝 Editing class ID: {event_id}")
         data = class_info.dict()
-        
-        # 🔍 DEBUG TIMEZONE
-        print(f"🕐 DEBUG TIMEZONE IN edit_class:")
-        print(f"  - class_info.timezone: '{class_info.timezone}'")
-        print(f"  - data['timezone']: '{data.get('timezone')}'")
-        print(f"  - class_info.dict()['timezone']: '{class_info.dict().get('timezone')}'")
-        
-        # DÙNG HÀM MỚI - THÊM DEBUG
-        print("🔄 Building recurrence rule for update...")
-        print(f"🕐 DEBUG BEFORE build_recurrence_description:")
-        print(f"  - data['timezone']: '{data.get('timezone')}'")
-        print(f"  - data keys: {list(data.keys())}")
+        data["edit_mode"] = edit_mode       
+
         
         recurrence_rule = build_recurrence_rule(data)
         recurrence_description = build_recurrence_description(data)
-        print(f"📆 Final RRULE for Google: {recurrence_rule}")
-        print(f"📝 Final recurrence description: {recurrence_description}")
         
         # CHUYỂN TỪ STRING SANG LIST CHO GOOGLE CALENDAR
         data["rrule"] = [recurrence_rule] if recurrence_rule else None
