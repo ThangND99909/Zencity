@@ -34,6 +34,9 @@ class ClassInfo(BaseModel):
     passcode: str = ""
     recurrence: Optional[str] = ""       # Loại lặp: DAILY, WEEKLY, MONTHLY, YEARLY
     repeat_count: int = 1                # Số lần lặp
+    week_count: Optional[int] = None     # Số tuần lặp (chỉ cho WEEKLY) - THÊM
+    month_count: Optional[int] = None    # Số tháng lặp (chỉ cho MONTHLY) - THÊM
+    year_count: Optional[int] = None 
     byday: List[str] = []                # Các ngày trong tuần (WEEKLY)
     bymonthday: List[int] = []           # Các ngày trong tháng (MONTHLY/YEARLY)
     bymonth: List[int] = []              # Các tháng (YEARLY)
@@ -210,7 +213,7 @@ def ai_suggest(teacher: str = None, duration_hours: int = 1):
         print(f"❌ Error in ai_suggest: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.post("/check-conflict")
+'''@app.post("/check-conflict")
 def api_check_conflict(request: ConflictCheckRequest):
     """API endpoint kiểm tra xung đột - DÙNG AI CHỈ KHI CẦN"""
     try:
@@ -269,7 +272,38 @@ def api_check_conflict(request: ConflictCheckRequest):
             request.teacher, 
             request.start, 
             request.end
+        )'''
+
+@app.post("/check-conflict")
+def api_check_conflict(request: ConflictCheckRequest):
+    """API endpoint kiểm tra xung đột - CHỈ DÙNG TRADITIONAL CHECK"""
+    try:
+        print(f"🔄 Traditional conflict check for: {request.teacher}")
+        
+        # Lấy tất cả classes hiện có
+        all_classes = list_events('both')
+        
+        from check_conflict import traditional_conflict_check
+        
+        result = traditional_conflict_check(
+            existing_classes=all_classes,
+            teacher=request.teacher,
+            new_start=request.start,
+            new_end=request.end,
+            exclude_event_id=request.exclude_event_id
         )
+        
+        # THÊM MESSAGE ĐƠN GIẢN
+        if result.get('has_conflict'):
+            result['message'] = f"⚠️ Giáo viên {request.teacher} có {len(result.get('conflicts', []))} xung đột lịch"
+        else:
+            result['message'] = f"✅ Không có xung đột với giáo viên {request.teacher}"
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Conflict check error: {e}")
+        return {'has_conflict': False, 'error': str(e), 'message': 'Lỗi kiểm tra xung đột'}
 
 @app.get("/timezones")
 def get_timezones():

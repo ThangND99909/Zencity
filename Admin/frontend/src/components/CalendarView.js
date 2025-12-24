@@ -8,6 +8,9 @@ import { getTimezones } from "../services/api";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import EventContextMenu from "./EventContextMenu";
 import EditRecurringModal from "./EditRecurringModal";
+import moment from "moment-timezone";
+
+
 
 export default function CalendarView({ events, onEventClick, onDateSelect, onCreateEvent, onDeleteEvent, calendarFilter }) {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -42,8 +45,9 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   const [myCalendars, setMyCalendars] = useState([
     { id: 1, name: "Calendar Lẻ (Giờ lẻ)", color: "#1a73e8", checked: true },
     { id: 2, name: "Calendar Chẵn (Giờ chẵn)", color: "#34a853", checked: true },
-    { id: 3, name: "Other", color: "#fbbc04", checked: true },
+    //{ id: 3, name: "Other", color: "#fbbc04", checked: true },
   ]);
+  
 
   const [timezoneOptions, setTimezoneOptions] = useState([
     { value: "Asia/Ho_Chi_Minh", label: "🇻🇳 Giờ Việt Nam (UTC+7)" },
@@ -159,7 +163,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       setShowDeleteModal(false);
       setEventToDelete(null);
       
-      alert("✅ Đã xóa sự kiện thành công!");
+      //alert("✅ Đã xóa sự kiện thành công!");
       
     } catch (error) {
       console.error("❌ Error deleting event:", error);
@@ -250,6 +254,50 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
         console.log("📌 Editing MASTER or REGULAR event");
       }
       
+      const eventTimezone = event.timezone || event.start?.timeZone || "Asia/Ho_Chi_Minh";
+      const userTimezone = eventTimezone; // hoặc lấy timezone người dùng hiện tại nếu có
+
+      // 🕐 Chuyển UTC ISO → giờ local theo timezone đúng
+      const localStart = moment.tz(event.start?.dateTime || event.start, eventTimezone)
+        .tz(userTimezone)
+        .format("YYYY-MM-DDTHH:mm");
+      const localEnd = moment.tz(event.end?.dateTime || event.end, eventTimezone)
+        .tz(userTimezone)
+        .format("YYYY-MM-DDTHH:mm");
+
+      // ✅ TÍNH CÁC COUNT TỰ ĐỘNG CHO TẤT CẢ LOẠI RECURRENCE
+      let weekCount = 1;
+      let monthCount = 1;
+      let yearCount = 1;
+      
+      switch (recurrenceData.recurrenceType) {
+        case "WEEKLY":
+          if (recurrenceData.byday && recurrenceData.byday.length > 0) {
+            weekCount = Math.ceil(adjustedRepeatCount / recurrenceData.byday.length);
+          } else {
+            weekCount = adjustedRepeatCount;
+          }
+          break;
+          
+        case "MONTHLY":
+          if (recurrenceData.bymonthday && recurrenceData.bymonthday.length > 0) {
+            monthCount = Math.ceil(adjustedRepeatCount / recurrenceData.bymonthday.length);
+          } else {
+            monthCount = adjustedRepeatCount;
+          }
+          break;
+          
+        case "YEARLY":
+          const daysPerYear = recurrenceData.bymonthday?.length || 1;
+          yearCount = Math.ceil(adjustedRepeatCount / daysPerYear);
+          break;
+          
+        default:
+          // DAILY hoặc không lặp
+          weekCount = 1;
+          monthCount = 1;
+          yearCount = 1;
+      }
       const editEventData = {
         id: event.id,
         title: event.name,
@@ -264,13 +312,22 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
         byday: recurrenceData.byday,
         bymonthday: recurrenceData.bymonthday,
         bymonth: recurrenceData.bymonth,
-        start: formatForInput(event.start?.dateTime || event.start),
-        end: formatForInput(event.end?.dateTime || event.end),
-        timezone: event.timezone || "Asia/Ho_Chi_Minh",
+        start: localStart,
+        end: localEnd,
+        timezone: userTimezone,
         recurrence_description: event.recurrence_description || "",
         calendar_source: event.calendar_source,
         is_recurring: event.recurrence || event.recurringEventId,
         recurring_event_id: event.recurringEventId,
+        // ✅ THÊM TẤT CẢ CÁC COUNT
+        week_count: weekCount,
+        month_count: monthCount,
+        year_count: yearCount,
+        
+        // ✅ THÊM TRƯỜNG INPUT TẠM THỜI ĐỂ HIỂN THỊ
+        _monthly_input: recurrenceData.bymonthday ? recurrenceData.bymonthday.join(",") : "",
+        _yearly_month_input: recurrenceData.bymonth ? recurrenceData.bymonth.join(",") : "",
+        _yearly_day_input: recurrenceData.bymonthday ? recurrenceData.bymonthday.join(",") : "",
         // ✅ THÊM THÔNG TIN QUAN TRỌNG CHO BACKEND
         _is_instance: event._is_instance || !!event.recurringEventId,
         _instance_index: instanceIndex,
@@ -328,30 +385,40 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     }
 
     const eventTimezone = event.timezone || "Asia/Ho_Chi_Minh";
+    const userTimezone = eventTimezone; // Hoặc timezone hiện tại của user
+
+    // 🕐 Convert UTC ISO → local time theo timezone
+    const localStart = moment
+      .tz(event.start, eventTimezone)
+      .tz(userTimezone)
+      .format("YYYY-MM-DDTHH:mm");
+    const localEnd = moment
+      .tz(event.end, eventTimezone)
+      .tz(userTimezone)
+      .format("YYYY-MM-DDTHH:mm");
 
     // 2. TẠO EVENT DATA VỚI METADATA ĐÚNG
     const eventWithEditMode = {
       ...event,
+      start: localStart,
+      end: localEnd,
       editMode: editMode,
       repeat_count: finalRepeatCount,
-      timezone: eventTimezone,
+      timezone: userTimezone,
       _editModeConfirmed: true,
       is_recurring_instance: !!originalEvent?.recurringEventId,
       master_event_id: originalEvent?.recurringEventId || originalEvent?.id,
-      
+
       // METADATA QUAN TRỌNG CHO BACKEND
       _is_editing_from_instance: !!originalEvent?.recurringEventId,
       _instance_index: event._instance_index || 1,
       _remaining_count: event._remaining_count || event.repeat_count,
 
-      
       // ĐẢM BẢO CÁC TRƯỜNG RECURRENCE KHÔNG BỊ MẤT
       recurrence: event.recurrence,
       byday: event.byday || [],
       bymonthday: event.bymonthday || [],
       bymonth: event.bymonth || [],
-      
-      
     };
 
     
@@ -396,10 +463,34 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
 
   // ✅ FILTER EVENTS DỰA TRÊN CALENDAR FILTER
   const filteredEvents = events.filter(event => {
-    if (calendarFilter === 'both') return true;
-    if (calendarFilter === 'odd') return event._calendar_source === 'odd';
-    if (calendarFilter === 'even') return event._calendar_source === 'even';
-    return true;
+    // 1. Lọc theo calendarFilter (odd/even/both)
+    let passesCalendarFilter = true;
+    if (calendarFilter === 'odd') {
+      passesCalendarFilter = event._calendar_source === 'odd';
+    } else if (calendarFilter === 'even') {
+      passesCalendarFilter = event._calendar_source === 'even';
+    }
+    
+    if (!passesCalendarFilter) return false;
+    
+    // 2. Lọc theo myCalendars đã chọn
+    const eventCalendarSource = event._calendar_source || 'odd';
+    const eventCalendarType = 
+      eventCalendarSource === 'odd' ? "Calendar Lẻ (Giờ lẻ)" :
+      eventCalendarSource === 'even' ? "Calendar Chẵn (Giờ chẵn)" : "Other";
+    
+    // Tìm calendar tương ứng trong myCalendars
+    const matchingCalendar = myCalendars.find(cal => 
+      cal.name.includes(eventCalendarType) ||
+      (eventCalendarSource === 'odd' && cal.name.includes("Lẻ")) ||
+      (eventCalendarSource === 'even' && cal.name.includes("Chẵn"))
+    );
+    
+    // Nếu không tìm thấy calendar phù hợp, cho phép hiển thị (fallback)
+    if (!matchingCalendar) return true;
+    
+    // Chỉ hiển thị nếu calendar được checked
+    return matchingCalendar.checked;
   });
 
   const dailyEvents = filteredEvents.filter((e) => {
@@ -813,67 +904,51 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
-  const formatForBackend = (datetimeLocal, timezone = "Asia/Ho_Chi_Minh") => {
-    if (!datetimeLocal) return "";
-    
-    console.log("🔧 formatForBackend INPUT:", datetimeLocal, "Timezone:", timezone);
-    
-    const localDate = new Date(datetimeLocal);
-    return localDate.toISOString();
+  
+
+  const formatForBackend = (datetimeLocal, timezone = "Asia/Ho_Chi_Minh", convertToUTC = true) => {
+      if (!datetimeLocal) return "";
+
+      if (convertToUTC) {
+          // Chuyển local → UTC (cho backend lưu UTC)
+          const utcISO = moment.tz(datetimeLocal, timezone)
+              .utc()
+              .format("YYYY-MM-DDTHH:mm:ss[Z]");
+          console.log("📤 formatForBackend (UTC):", datetimeLocal, "(", timezone, ") →", utcISO);
+          return utcISO;
+      } else {
+          // Gửi local ISO + timezone, giữ UTC để Google Calendar hiển thị đúng
+          const localISO = moment.tz(datetimeLocal, timezone)
+              .format("YYYY-MM-DDTHH:mm:ss");
+          console.log("📤 formatForBackend (local):", datetimeLocal, "(", timezone, ") →", localISO);
+          return localISO;
+      }
   };
 
   const createConflictMessage = (conflictResult, currentTeacher) => {
-    const checkType = conflictResult.check_type || 'ai_full';
-    const checkTypeText = {
-      'ai_suggestions': 'AI Đề Xuất Thông Minh',
-      'traditional_fast': 'Kiểm Tra Nhanh',
-      'ai_full': 'AI Phân Tích'
-    }[checkType] || 'AI Phân Tích';
-    
-    let message = `🤖 KIỂM TRA XUNG ĐỘT (${checkTypeText})\n\n`;
-    
-    if (conflictResult.ai_analysis) {
-      message += `📊 ${conflictResult.ai_analysis}\n\n`;
-    }
-    
-    if (conflictResult.has_conflict && conflictResult.conflicts.length > 0) {
-      message += `⚠️ Giáo viên "${currentTeacher}" có ${conflictResult.conflicts.length} xung đột:\n\n`;
+      let message = `⚠️ KIỂM TRA XUNG ĐỘT LỊCH\n\n`;
       
-      conflictResult.conflicts.forEach((conflict, index) => {
-        const startTime = new Date(conflict.event_start).toLocaleString('vi-VN');
-        const endTime = new Date(conflict.event_end).toLocaleString('vi-VN');
-        
-        message += `🚨 ${conflict.event_summary}\n`;
-        message += `   👨‍🏫 GV: ${conflict.event_teacher}\n`;
-        message += `   ⏰ ${startTime} - ${endTime}\n\n`;
-      });
-    } else {
-      message += `✅ Không có xung đột trực tiếp với giáo viên "${currentTeacher}"\n\n`;
-    }
-    
-    if (conflictResult.suggestions && conflictResult.suggestions.length > 0) {
-      message += `💡 ĐỀ XUẤT THỜI GIAN THAY THẾ:\n`;
-      conflictResult.suggestions.forEach((suggestion, index) => {
-        const startTime = new Date(suggestion.start).toLocaleString('vi-VN');
-        message += `   ${index + 1}. ${suggestion.description || 'Khung giờ phù hợp'}\n`;
-        message += `      🕒 ${startTime}\n`;
-        message += `\n`;
-      });
-    }
-    
-    if (conflictResult.has_conflict) {
-      message += `Bạn muốn:\n`;
-      message += `• "OK" - VẪN tạo sự kiện (có xung đột)\n`;
-      message += `• "Cancel" - HỦY và chọn thời gian khác\n`;
-      
-      if (conflictResult.suggestions && conflictResult.suggestions.length > 0) {
-        message += `• Hoặc nhập số (1, 2) để dùng đề xuất trên`;
+      if (conflictResult.has_conflict && conflictResult.conflicts.length > 0) {
+          message += `Giáo viên "${currentTeacher}" có ${conflictResult.conflicts.length} xung đột:\n\n`;
+          
+          conflictResult.conflicts.forEach((conflict, index) => {
+              const startTime = new Date(conflict.event_start).toLocaleString('vi-VN');
+              const endTime = new Date(conflict.event_end).toLocaleString('vi-VN');
+              
+              message += `${index + 1}. ${conflict.event_summary}\n`;
+              message += `   👨‍🏫 ${conflict.event_teacher}\n`;
+              message += `   🕒 ${startTime} - ${endTime}\n\n`;
+          });
+          
+          message += `Bạn muốn:\n`;
+          message += `• "OK" - VẪN tạo sự kiện (có xung đột)\n`;
+          message += `• "Cancel" - HỦY và chọn thời gian khác\n`;
+      } else {
+          message += `✅ Không có xung đột với giáo viên "${currentTeacher}"\n\n`;
+          message += `"OK" để tiếp tục tạo sự kiện.`;
       }
-    } else {
-      message += `✅ Không có xung đột. "OK" để tiếp tục tạo sự kiện.`;
-    }
-    
-    return message;
+      
+      return message;
   };
 
   const openPopup = (start, end) => {
@@ -909,6 +984,9 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       end: formatForInput(defaultEnd),
       recurrence: "",
       repeat_count: 1,
+      week_count: 1,      // THÊM DÒNG NÀY
+      month_count: 1,     // THÊM DÒNG NÀY
+      year_count: 1,      // THÊM DÒNG NÀY
       byday: [],
       bymonthday: [],
       bymonth: [],
@@ -917,6 +995,10 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       // ✅ THÊM THÔNG TIN CALENDAR
       hour_type: hourType,
       target_calendar: targetCalendar,
+      // Thêm trường tạm thời
+      _monthly_input: "",
+      _yearly_month_input: "",
+      _yearly_day_input: "",
     };
 
     setNewEvent(defaultEvent);
@@ -924,9 +1006,9 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     setShowPopup(true);
     
     // ✅ HIỂN THỊ THÔNG BÁO VỀ CALENDAR
-    setTimeout(() => {
-      alert(`📅 Lưu ý:\nSự kiện bắt đầu lúc ${start.getHours()}h sẽ được lưu vào:\n${targetCalendar}\n\nGiờ chẵn → 📗 Calendar Chẵn\nGiờ lẻ → 📘 Calendar Lẻ`);
-    }, 100);
+    //setTimeout(() => {
+    //  alert(`📅 Lưu ý:\nSự kiện bắt đầu lúc ${start.getHours()}h sẽ được lưu vào:\n${targetCalendar}\n\nGiờ chẵn → 📗 Calendar Chẵn\nGiờ lẻ → 📘 Calendar Lẻ`);
+    //}, 100);
   };
 
   const handleSave = async () => {
@@ -983,8 +1065,10 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     const hourType = checkEvenOddHour(newEvent.start);
     const targetCalendar = hourType === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ';
     
-    alert(`🎯 Sự kiện sẽ được lưu vào: ${targetCalendar}\nGiờ bắt đầu: ${new Date(newEvent.start).getHours()}h (${hourType === 'even' ? 'chẵn' : 'lẻ'})`);
+    //alert(`🎯 Sự kiện sẽ được lưu vào: ${targetCalendar}\nGiờ bắt đầu: ${new Date(newEvent.start).getHours()}h (${hourType === 'even' ? 'chẵn' : 'lẻ'})`);
     
+    // 🔹 Chỉ gửi ISO chuẩn UTC (cực kỳ quan trọng)
+    //const formatForBackend = (date, timezone) => new Date(date).toISOString();
     // 🔍 KIỂM TRA XUNG ĐỘT TRƯỚC KHI LƯU
     if (newEvent.teacher && newEvent.teacher.trim() !== "") {
       try {
@@ -1000,45 +1084,8 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
         // XỬ LÝ KẾT QUẢ AI
         if (conflictResult.has_conflict) {
           const conflictMessage = createConflictMessage(conflictResult, newEvent.teacher);
-          
-          if (conflictResult.suggestions && conflictResult.suggestions.length > 0) {
-            const userChoice = prompt(conflictMessage);
-            
-            if (userChoice === null) {
-              alert("🚫 Đã hủy tạo lịch do trùng lịch giáo viên");
-              return; 
-            } else if (userChoice === '1' || userChoice === '2') {
-              const suggestionIndex = parseInt(userChoice) - 1;
-              const selectedSuggestion = conflictResult.suggestions[suggestionIndex];
-              
-              setNewEvent(prev => ({
-                ...prev,
-                start: formatForInput(selectedSuggestion.start),
-                end: formatForInput(selectedSuggestion.end)
-              }));
-              
-              alert(`✅ Đã chuyển sang thời gian: ${new Date(selectedSuggestion.start).toLocaleString('vi-VN')}`);
-              return;
-            } else if (userChoice === '') {
-              alert("⚠️ Cảnh báo: Bạn vẫn tạo lịch dù có xung đột!");
-              console.log("⚠️ User confirmed to create despite conflict");
-            } else {
-              alert("❌ Lựa chọn không hợp lệ. Vui lòng thử lại.");
-              return;
-            }
-          } else {
-            const userConfirmed = window.confirm(conflictMessage + "\n\nBấm OK để VẪN TẠO, Cancel để HỦY");
-            
-            if (!userConfirmed) {
-              alert("🚫 Đã hủy tạo lịch do trùng lịch giáo viên");
-              return;
-            }
-            alert("⚠️ Cảnh báo: Bạn vẫn tạo lịch dù có xung đột!");
-          }
-        } else {
-          if (conflictResult.ai_analysis) {
-            alert(`🤖 AI Phân tích:\n${conflictResult.ai_analysis}\n\n✅ Không có xung đột!`);
-          }
+          const userConfirmed = window.confirm(conflictMessage);
+          if (!userConfirmed) return; // Không có alert thêm
         }
       } catch (error) {
         alert(`❌ LỖI CHECK CONFLICT:\n\nStatus: ${error.response?.status}\nMessage: ${error.response?.data?.detail || error.message}`);
@@ -1084,6 +1131,31 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
     const finalTimezone = newEvent?.timezone || "Asia/Ho_Chi_Minh";
   
     console.log("🔥 FINAL TIMEZONE FOR SAVE:", finalTimezone);
+    // 🕐 Xác định xem người dùng có đổi timezone thực sự không
+    const timezoneChanged =
+      editingEvent && newEvent.timezone && editingEvent.timezone !== newEvent.timezone;
+
+    // ⚙️ Nếu chỉ đổi timezone hiển thị, giữ UTC gốc (convertToUTC=false)
+    const startForBackend = formatForBackend(
+      newEvent.start,
+      finalTimezone,
+      timezoneChanged // convertToUTC = true khi timezoneChanged = true
+    );
+    const endForBackend = formatForBackend(
+      newEvent.end,
+      finalTimezone,
+      timezoneChanged
+    );
+
+    console.log("🕓 Timezone change detected:", timezoneChanged);
+    console.log("📤 Sending to backend:", {
+      startForBackend,
+      endForBackend,
+      finalTimezone,
+      convertToUTC: timezoneChanged,
+    });
+
+    // ✅ Gói dữ liệu gửi backend
     const eventData = {
       ...(newEvent.id && { id: newEvent.id }),
       name: newEvent.title,
@@ -1093,28 +1165,21 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       zoom_link: newEvent.zoom_link,
       meeting_id: newEvent.meeting_id,
       passcode: newEvent.passcode,
-      // Only add recurrence if not 'this' mode on instance
-      ...(newEvent.editMode !== 'this' || !newEvent.id?.includes('_') ? {
-        recurrence: newEvent.recurrence || "",
-        repeat_count: newEvent.repeat_count || 1,
-        byday: newEvent.byday || [],
-        bymonthday: newEvent.bymonthday || [],
-        bymonth: newEvent.bymonth || [],
-      } : {}),
-      ...(newEvent.recurrence && {
-        recurrence: newEvent.recurrence,
-        repeat_count: newEvent.repeat_count || 1,
-        byday: newEvent.byday || [],
-        bymonthday: newEvent.bymonthday || [],
-        bymonth: newEvent.bymonth || [],
-      }),
-      start: formatForBackend(newEvent.start, finalTimezone),
-      end: formatForBackend(newEvent.end, finalTimezone),
+      ...(newEvent.editMode !== "this" || !newEvent.id?.includes("_")
+        ? {
+            recurrence: newEvent.recurrence || "",
+            repeat_count: newEvent.repeat_count || 1,
+            byday: newEvent.byday || [],
+            bymonthday: newEvent.bymonthday || [],
+            bymonth: newEvent.bymonth || [],
+          }
+        : {}),
+      start: startForBackend,
+      end: endForBackend,
       timezone: finalTimezone,
       recurrence_description: newEvent.recurrence_description || "",
       edit_mode: finalEditMode,
       isEdit: !!editingEvent,
-      
     };
     console.log("📦 FINAL EVENT DATA with edit_mode:", eventData.edit_mode);
 
@@ -1329,7 +1394,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                 const normalizedEvent = normalizeEvent(e);
                 const top = e.startMins;
                 const height = Math.max(e.endMins - e.startMins, 30);
-                
+                console.log("🧭 DEBUG EVENT:", normalizedEvent);
                 // ✅ ÁP DỤNG CSS CLASS DỰA TRÊN CALENDAR SOURCE
                 const eventClass = normalizedEvent.calendar_source === 'odd' 
                   ? styles.eventItemOdd 
@@ -1367,10 +1432,9 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                     </div>
                     <div className={styles.eventTeacher}>{normalizedEvent.teacher}</div>
                     <div className={styles.eventTime}>
-                      {new Date(normalizedEvent.start?.dateTime || normalizedEvent.start).toLocaleTimeString('vi-VN', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
+                      {moment(normalizedEvent.start?.dateTime)
+                        .tz(normalizedEvent.start?.timeZone || normalizedEvent.timezone || "Asia/Ho_Chi_Minh")
+                        .format("HH:mm")}
                     </div>
                   </div>
                 );
@@ -1591,7 +1655,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                 ✏️ Chỉnh sửa
               </button>
 
-              <button
+              {/*<button
                 onClick={() => {
                   if (!selectedEvent.id) {
                     alert("Không thể xóa: thiếu ID sự kiện");
@@ -1602,7 +1666,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                 }}
               >
                 🗑️ Xóa
-              </button>
+              </button>*/}
 
               <button onClick={() => setShowDetailPopup(false)}>Đóng</button>
             </div>
@@ -1624,12 +1688,12 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
               )}
             </div>
 
-            <div className={styles.debugInfo}>
+            {/*<div className={styles.debugInfo}>
               <div><strong>DEBUG CALENDAR LOGIC:</strong></div>
               <div>Giờ bắt đầu: {newEvent.start ? new Date(newEvent.start).getHours() : 'N/A'}h</div>
               <div>Loại giờ: {newEvent?.hour_type || 'chưa xác định'} ({newEvent?.hour_type === 'even' ? 'chẵn' : 'lẻ'})</div>
               <div>Calendar đích: {newEvent?.target_calendar || 'tự động'}</div>
-            </div>
+            </div>*/}
 
             <label>
               Tiêu đề (tự động):
@@ -1738,11 +1802,11 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                     }));
                   }}
                 />
-                {newEvent.start && (
+                {/*{newEvent.start && (
                   <div className={styles.timeNote}>
                     Giờ: {new Date(newEvent.start).getHours()}h → {newEvent?.hour_type === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ'}
                   </div>
-                )}
+                )}*/}
               </div>
               <div className={styles.formGroup}>
                 <label>Kết thúc:</label>
@@ -1787,14 +1851,29 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
                 onChange={(e) => {
                   const val = e.target.value;
                   console.log("🔁 Chọn lặp lại:", val);
-                  setNewEvent(prev => ({
-                    ...prev,
-                    recurrence: val,
-                    repeat_count: val ? (prev.repeat_count > 1 ? prev.repeat_count : 2) : 1,
-                    byday: Array.isArray(prev.byday) ? prev.byday : [],
-                    bymonthday: Array.isArray(prev.bymonthday) ? prev.bymonthday : [],
-                    bymonth: Array.isArray(prev.bymonth) ? prev.bymonth : [],
-                  }));
+                  
+                  // Tạo bản sao của state hiện tại
+                  const updatedEvent = { ...newEvent, recurrence: val };
+                  
+                  // Reset các count về 1 khi đổi loại recurrence
+                  if (val === "WEEKLY") {
+                    updatedEvent.week_count = 1;
+                    updatedEvent.repeat_count = updatedEvent.byday?.length || 1;
+                  } else if (val === "MONTHLY") {
+                    updatedEvent.month_count = 1;
+                    updatedEvent.repeat_count = updatedEvent.bymonthday?.length || 1;
+                  } else if (val === "YEARLY") {
+                    updatedEvent.year_count = 1;
+                    updatedEvent.repeat_count = updatedEvent.bymonthday?.length || 1;
+                  } else if (val === "DAILY") {
+                    // Giữ nguyên repeat_count cho DAILY
+                    updatedEvent.repeat_count = updatedEvent.repeat_count || 1;
+                  } else {
+                    // Không lặp
+                    updatedEvent.repeat_count = 1;
+                  }
+                  
+                  setNewEvent(updatedEvent);
                 }}
               >
                 <option value="">Không lặp</option>
@@ -1805,7 +1884,10 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
               </select>
             </label>
 
-            {newEvent.recurrence && (
+            
+
+            {/* PHẦN DAILY - CHỈ HIỂN THỊ KHI CHỌN DAILY */}
+            {newEvent.recurrence === "DAILY" && (
               <label>
                 Số lần lặp:
                 <input
@@ -1820,89 +1902,402 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
               </label>
             )}
 
-            
-
+            {/* PHẦN WEEKLY - HIỂN THỊ MỚI VỚI "Số tuần lặp lại" */}
             {newEvent.recurrence === "WEEKLY" && (
-              <div className={styles.weeklyGroup}>
-                <label>Chọn ngày trong tuần:</label>
-                <div className={styles.dayCheckboxes}>
-                  {["MO", "TU", "WE", "TH", "FR", "SA", "SU"].map((day) => (
-                    <label key={day} style={{ marginRight: "10px" }}>
-                      <input
-                        type="checkbox"
-                        checked={Array.isArray(newEvent.byday) && newEvent.byday.includes(day)}
-                        onChange={() => {
-                          const arr = Array.isArray(newEvent.byday) ? newEvent.byday : [];
-                          const newArr = arr.includes(day)
-                            ? arr.filter((d) => d !== day)
-                            : [...arr, day];
-                          setNewEvent(prev => ({
-                            ...prev,
-                            byday: newArr
-                          }));
-                        }}
-                      />
-                      {day}
-                    </label>
-                  ))}
+              <div className={styles.recurrenceCustomGroup}>
+                <label>
+                  Số tuần lặp lại:
+                  <input
+                    type="number"
+                    min={1}
+                    value={newEvent.week_count || 1}
+                    onChange={(e) => {
+                      const weeks = Number(e.target.value);
+                      const totalEvents = weeks * (newEvent.byday?.length || 1);
+                      setNewEvent(prev => ({
+                        ...prev,
+                        week_count: weeks,
+                        repeat_count: totalEvents
+                      }));
+                    }}
+                  />
+                </label>
+                {newEvent.byday?.length > 0 && (
+                  <div className={styles.recurrenceNote}>
+                    (Tổng cộng {newEvent.repeat_count || 1} buổi học)
+                  </div>
+                )}
+                
+                <div className={styles.weeklyGroup}>
+                  <label>Chọn ngày trong tuần:</label>
+                  <div className={styles.dayCheckboxes}>
+                    {["MO", "TU", "WE", "TH", "FR", "SA", "SU"].map((day) => (
+                      <label key={day} style={{ marginRight: "10px" }}>
+                        <input
+                          type="checkbox"
+                          checked={Array.isArray(newEvent.byday) && newEvent.byday.includes(day)}
+                          onChange={() => {
+                            const arr = Array.isArray(newEvent.byday) ? newEvent.byday : [];
+                            const newArr = arr.includes(day)
+                              ? arr.filter((d) => d !== day)
+                              : [...arr, day];
+                            // Tự động tính lại repeat_count
+                            const totalEvents = newEvent.week_count * newArr.length;
+                            setNewEvent(prev => ({
+                              ...prev,
+                              byday: newArr,
+                              repeat_count: totalEvents
+                            }));
+                          }}
+                        />
+                        {day}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
 
+            {/* PHẦN MONTHLY - HIỂN THỊ MỚI VỚI "Số tháng lặp lại" */}
             {newEvent.recurrence === "MONTHLY" && (
-              <label>
-                Ngày trong tháng (vd: 1,15,30):
-                <input
-                  type="text"
-                  value={Array.isArray(newEvent.bymonthday) ? newEvent.bymonthday.join(",") : ""}
-                  onChange={(e) =>
-                    setNewEvent({
-                      ...newEvent,
-                      bymonthday: e.target.value
+              <div className={styles.recurrenceCustomGroup}>
+                <label>
+                  Số tháng lặp lại:
+                  <input
+                    type="number"
+                    min={1}
+                    value={newEvent.month_count || 1}
+                    onChange={(e) => {
+                      const months = Number(e.target.value);
+                      const totalEvents = months * (newEvent.bymonthday?.length || 1);
+                      setNewEvent(prev => ({
+                        ...prev,
+                        month_count: months,
+                        repeat_count: totalEvents
+                      }));
+                    }}
+                  />
+                </label>
+                
+                <label>
+                  Ngày trong tháng (vd: 1,15,30):
+                  <input
+                    type="text"
+                    value={newEvent._monthly_input || (Array.isArray(newEvent.bymonthday) ? newEvent.bymonthday.join(",") : "")}
+                    onChange={(e) => {
+                      // CHỈ lưu text tạm thời
+                      setNewEvent(prev => ({
+                        ...prev,
+                        _monthly_input: e.target.value
+                      }));
+                    }}
+                    onBlur={(e) => {
+                      // KHI RỜI KHỎI INPUT mới parse
+                      const inputValue = e.target.value.trim();
+                      
+                      if (!inputValue) {
+                        setNewEvent(prev => ({
+                          ...prev,
+                          bymonthday: [],
+                          _monthly_input: "",
+                          repeat_count: prev.month_count * 0
+                        }));
+                        return;
+                      }
+                      
+                      // Parse thành mảng số
+                      const newBymonthday = inputValue
                         .split(",")
-                        .map((x) => Number(x.trim()))
-                        .filter(Boolean),
-                    })
-                  }
-                />
-              </label>
+                        .map(x => {
+                          const num = Number(x.trim());
+                          return isNaN(num) ? null : num;
+                        })
+                        .filter(n => n !== null && n > 0 && n <= 31)
+                        .sort((a, b) => a - b); // Sắp xếp tăng dần
+                      
+                      // Tự động tính lại repeat_count
+                      const totalEvents = newEvent.month_count * newBymonthday.length;
+                      
+                      // Cập nhật state với giá trị đã cleaned
+                      const cleanedInput = newBymonthday.join(",");
+                      
+                      setNewEvent(prev => ({
+                        ...prev,
+                        bymonthday: newBymonthday,
+                        repeat_count: totalEvents,
+                        _monthly_input: cleanedInput
+                      }));
+                    }}
+                    placeholder="Nhập các ngày (1-31), cách nhau bằng dấu phẩy"
+                  />
+                </label>
+                
+                {newEvent.bymonthday?.length > 0 && (
+                  <div className={styles.recurrenceNote}>
+                    (Tổng cộng {newEvent.repeat_count || 1} buổi học - các ngày: {newEvent.bymonthday?.join(", ")})
+                  </div>
+                )}
+                
+                {/* Quick select buttons */}
+                <div style={{ marginTop: '10px' }}>
+                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Chọn nhanh:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                    {[1, 5, 10, 15, 20, 25, 30].map(day => (
+                      <button
+                        key={day}
+                        type="button"
+                        style={{
+                          padding: '4px 8px',
+                          border: '1px solid #ddd',
+                          borderRadius: '3px',
+                          background: newEvent.bymonthday?.includes(day) ? '#4CAF50' : '#f5f5f5',
+                          color: newEvent.bymonthday?.includes(day) ? '#fff' : '#333',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                        onClick={() => {
+                          const current = newEvent.bymonthday || [];
+                          let newBymonthday;
+                          
+                          if (current.includes(day)) {
+                            newBymonthday = current.filter(d => d !== day);
+                          } else {
+                            newBymonthday = [...current, day].sort((a, b) => a - b);
+                          }
+                          
+                          const totalEvents = newEvent.month_count * newBymonthday.length;
+                          const cleanedInput = newBymonthday.join(",");
+                          
+                          setNewEvent(prev => ({
+                            ...prev,
+                            bymonthday: newBymonthday,
+                            repeat_count: totalEvents,
+                            _monthly_input: cleanedInput
+                          }));
+                        }}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
 
+            {/* PHẦN YEARLY - CÁCH TỐT NHẤT: DÙNG onBlur để parse */}
             {newEvent.recurrence === "YEARLY" && (
-              <>
+              <div className={styles.recurrenceCustomGroup}>
                 <label>
-                  Tháng (vd: 1,6,12):
+                  Số năm lặp lại:
                   <input
-                    type="text"
-                    value={Array.isArray(newEvent.bymonth) ? newEvent.bymonth.join(",") : ""}
-                    onChange={(e) =>
-                      setNewEvent({
-                        ...newEvent,
-                        bymonth: e.target.value
-                          .split(",")
-                          .map((x) => Number(x.trim()))
-                          .filter(Boolean),
-                      })
-                    }
+                    type="number"
+                    min={1}
+                    value={newEvent.year_count || 1}
+                    onChange={(e) => {
+                      const years = Number(e.target.value);
+                      const totalEvents = years * (newEvent.bymonthday?.length || 1);
+                      setNewEvent(prev => ({
+                        ...prev,
+                        year_count: years,
+                        repeat_count: totalEvents
+                      }));
+                    }}
                   />
                 </label>
-                <label>
-                  Ngày (vd: 1,15,20):
-                  <input
-                    type="text"
-                    value={Array.isArray(newEvent.bymonthday) ? newEvent.bymonthday.join(",") : ""}
-                    onChange={(e) =>
-                      setNewEvent({
-                        ...newEvent,
-                        bymonthday: e.target.value
-                          .split(",")
-                          .map((x) => Number(x.trim()))
-                          .filter(Boolean),
-                      })
-                    }
-                  />
-                </label>
-              </>
+                
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label>
+                      Tháng (vd: 1,6,12):
+                      <input
+                        type="text"
+                        value={newEvent._yearly_month_input || (Array.isArray(newEvent.bymonth) ? newEvent.bymonth.join(",") : "")}
+                        onChange={(e) => {
+                          setNewEvent(prev => ({
+                            ...prev,
+                            _yearly_month_input: e.target.value
+                          }));
+                        }}
+                        onBlur={(e) => {
+                          const inputValue = e.target.value.trim();
+                          
+                          if (!inputValue) {
+                            setNewEvent(prev => ({
+                              ...prev,
+                              bymonth: [],
+                              _yearly_month_input: ""
+                            }));
+                            return;
+                          }
+                          
+                          const newBymonth = inputValue
+                            .split(",")
+                            .map(x => {
+                              const num = Number(x.trim());
+                              return isNaN(num) ? null : num;
+                            })
+                            .filter(n => n !== null && n >= 1 && n <= 12)
+                            .sort((a, b) => a - b);
+                          
+                          const cleanedInput = newBymonth.join(",");
+                          
+                          setNewEvent(prev => ({
+                            ...prev,
+                            bymonth: newBymonth,
+                            _yearly_month_input: cleanedInput
+                          }));
+                        }}
+                        placeholder="Các tháng (1-12)"
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                  </div>
+                  
+                  <div style={{ flex: 1 }}>
+                    <label>
+                      Ngày (vd: 1,15,20):
+                      <input
+                        type="text"
+                        value={newEvent._yearly_day_input || (Array.isArray(newEvent.bymonthday) ? newEvent.bymonthday.join(",") : "")}
+                        onChange={(e) => {
+                          setNewEvent(prev => ({
+                            ...prev,
+                            _yearly_day_input: e.target.value
+                          }));
+                        }}
+                        onBlur={(e) => {
+                          const inputValue = e.target.value.trim();
+                          
+                          if (!inputValue) {
+                            setNewEvent(prev => ({
+                              ...prev,
+                              bymonthday: [],
+                              _yearly_day_input: "",
+                              repeat_count: prev.year_count * 0
+                            }));
+                            return;
+                          }
+                          
+                          const newBymonthday = inputValue
+                            .split(",")
+                            .map(x => {
+                              const num = Number(x.trim());
+                              return isNaN(num) ? null : num;
+                            })
+                            .filter(n => n !== null && n > 0 && n <= 31)
+                            .sort((a, b) => a - b);
+                          
+                          const totalEvents = newEvent.year_count * newBymonthday.length;
+                          const cleanedInput = newBymonthday.join(",");
+                          
+                          setNewEvent(prev => ({
+                            ...prev,
+                            bymonthday: newBymonthday,
+                            repeat_count: totalEvents,
+                            _yearly_day_input: cleanedInput
+                          }));
+                        }}
+                        placeholder="Các ngày (1-31)"
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                  </div>
+                </div>
+                
+                {/* Quick select for months */}
+                <div style={{ marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Chọn tháng nhanh:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                    {[1, 3, 6, 9, 12].map(month => (
+                      <button
+                        key={month}
+                        type="button"
+                        style={{
+                          padding: '4px 8px',
+                          border: '1px solid #ddd',
+                          borderRadius: '3px',
+                          background: newEvent.bymonth?.includes(month) ? '#4CAF50' : '#f5f5f5',
+                          color: newEvent.bymonth?.includes(month) ? '#fff' : '#333',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                        onClick={() => {
+                          const current = newEvent.bymonth || [];
+                          let newBymonth;
+                          
+                          if (current.includes(month)) {
+                            newBymonth = current.filter(m => m !== month);
+                          } else {
+                            newBymonth = [...current, month].sort((a, b) => a - b);
+                          }
+                          
+                          const cleanedInput = newBymonth.join(",");
+                          
+                          setNewEvent(prev => ({
+                            ...prev,
+                            bymonth: newBymonth,
+                            _yearly_month_input: cleanedInput
+                          }));
+                        }}
+                      >
+                        Tháng {month}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Quick select for days */}
+                <div style={{ marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Chọn ngày nhanh:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                    {[1, 5, 10, 15, 20, 25, 30].map(day => (
+                      <button
+                        key={day}
+                        type="button"
+                        style={{
+                          padding: '4px 8px',
+                          border: '1px solid #ddd',
+                          borderRadius: '3px',
+                          background: newEvent.bymonthday?.includes(day) ? '#4CAF50' : '#f5f5f5',
+                          color: newEvent.bymonthday?.includes(day) ? '#fff' : '#333',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                        onClick={() => {
+                          const current = newEvent.bymonthday || [];
+                          let newBymonthday;
+                          
+                          if (current.includes(day)) {
+                            newBymonthday = current.filter(d => d !== day);
+                          } else {
+                            newBymonthday = [...current, day].sort((a, b) => a - b);
+                          }
+                          
+                          const totalEvents = newEvent.year_count * newBymonthday.length;
+                          const cleanedInput = newBymonthday.join(",");
+                          
+                          setNewEvent(prev => ({
+                            ...prev,
+                            bymonthday: newBymonthday,
+                            repeat_count: totalEvents,
+                            _yearly_day_input: cleanedInput
+                          }));
+                        }}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {(newEvent.bymonthday?.length > 0 || newEvent.bymonth?.length > 0) && (
+                  <div className={styles.recurrenceNote}>
+                    (Tổng cộng {newEvent.repeat_count || 1} buổi học)
+                    {newEvent.bymonth?.length > 0 && ` - Tháng: ${newEvent.bymonth.join(", ")}`}
+                    {newEvent.bymonthday?.length > 0 && ` - Ngày: ${newEvent.bymonthday.join(", ")}`}
+                  </div>
+                )}
+              </div>
             )}
 
             <div className={styles.popupActions}>

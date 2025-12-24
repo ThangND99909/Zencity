@@ -6,6 +6,7 @@ import ClassForm from "../components/ClassForm";
 import CalendarView from "../components/CalendarView";
 import styles from "./AdminSchedule.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
+import LoadingOverlay from '../components/LoadingOverlay';
 
 export default function AdminSchedule() {
   const [classes, setClasses] = useState([]);
@@ -13,14 +14,30 @@ export default function AdminSchedule() {
   const [creatingClass, setCreatingClass] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingType, setLoadingType] = useState('default');
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [editLoading, setEditLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [calendarFilter, setCalendarFilter] = useState('both'); // 'odd', 'even', 'both'
 
+  // Hàm show loading
+  const showLoading = (type = 'default', customMessage = '') => {
+    setLoadingType(type);
+    if (customMessage) {
+      setLoadingMessage(customMessage);
+    }
+    setLoading(true);
+  };
+
+  const hideLoading = () => {
+    setLoading(false);
+    setLoadingMessage('');
+  };
+
   const loadClasses = async (filter = calendarFilter) => {
     try {
-      setLoading(true);
+      showLoading('classes');
       setError(null);
       
       // ✅ THÊM PARAMETER calendar_type
@@ -35,12 +52,6 @@ export default function AdminSchedule() {
         const evenEvents = data.filter(event => event._calendar_source === 'even');
         const unknownEvents = data.filter(event => !event._calendar_source);
         
-        console.log("📊 CALENDAR STATS:", {
-          totalEvents: data.length,
-          oddCalendar: oddEvents.length,
-          evenCalendar: evenEvents.length,
-          unknownSource: unknownEvents.length
-        });
         
         // Tìm events có recurrence
         const eventsWithRecurrence = data.filter(event => event.recurrence);
@@ -57,7 +68,7 @@ export default function AdminSchedule() {
       setError("Failed to load classes: " + err.message);
       console.error("Load classes error:", err);
     } finally {
-      setLoading(false);
+      hideLoading();
     }
   };
 
@@ -79,38 +90,11 @@ export default function AdminSchedule() {
     }, 5000);
   };
 
-  const handleAISuggest = async () => {
-    try {
-      const teacher = prompt("Teacher (optional):");
-      const durationInput = prompt("Duration in hours (default: 1):", "1");
-      const duration_hours = parseInt(durationInput) || 1;
-
-      const data = await suggestClass(teacher, duration_hours);
-      if (!data || data.error) {
-        showMessage("AI Suggestion Error: " + (data?.error || "No response from server."));
-        return;
-      }
-
-      setCreatingClass({
-        name: "New Class",
-        teacher: teacher || "",
-        zoom_link: "",
-        meeting_id: "",
-        passcode: "",
-        program: "",
-        start: data.start,
-        end: data.end,
-      });
-      setEditingClass(null);
-      setShowCalendar(false);
-      showMessage("AI suggestion loaded! Please review and save.", "success");
-    } catch (err) {
-      showMessage("AI Suggestion failed: " + err.message);
-    }
-  };
+  
 
   const handleAdd = async (data) => {
     try {
+      showLoading('add');
       await addClass({
         name: data.name,
         classname: data.classname || "",
@@ -130,9 +114,13 @@ export default function AdminSchedule() {
       });
       await loadClasses(calendarFilter);
       setCreatingClass(null);
-      showMessage("Class added successfully!", "success");
+      setTimeout(() => {
+        showMessage("Class added successfully!", "success");
+      }, 300);
     } catch (err) {
       showMessage("Failed to add class: " + err.message);
+    } finally {
+      hideLoading();
     }
   };
 
@@ -140,6 +128,7 @@ export default function AdminSchedule() {
 
   const handleUpdate = async (data) => {
     try {
+      showLoading('update');
       const id = data.id || editingClass?.id;
       const editMode = data.edit_mode || data.editMode || 'this';
       
@@ -183,11 +172,14 @@ export default function AdminSchedule() {
         status: err.response?.status
       });
       showMessage("Lỗi cập nhật: " + err.message);
+    } finally {
+      hideLoading();
     }
   };
 
   const handleDelete = async (eventData) => {
     try {
+      showLoading('delete');
       console.log("🔥 HANDLE DELETE CALLED - FULL DATA:", eventData);
       
       // **FIX: Xử lý cả string và object**
@@ -250,6 +242,8 @@ export default function AdminSchedule() {
     } catch (err) {
       console.error("❌ Delete error:", err);
       showMessage("Failed to delete class: " + err.message);
+    } finally {
+      hideLoading();
     }
   };
 
@@ -258,9 +252,19 @@ export default function AdminSchedule() {
     setCreatingClass(null);
   };
 
-  const handleRefresh = () => {
-    loadClasses(calendarFilter);
-    showMessage("Classes refreshed!", "success");
+  const handleRefresh = async () => {
+    try {
+      // Load classes trước
+      await loadClasses(calendarFilter);
+      
+      // Delay một chút để loading ẩn đi rồi mới hiển thị thông báo
+      setTimeout(() => {
+        showMessage("Classes refreshed successfully!", "success");
+      }, 100); // Delay 100ms
+      
+    } catch (err) {
+      showMessage("Refresh failed: " + err.message, "error");
+    }
   };
 
   // ✅ HÀM CHUẨN: Parse recurrence rule
@@ -482,21 +486,35 @@ export default function AdminSchedule() {
 
   return (
     <div className={styles.container}>
+      <LoadingOverlay 
+        isLoading={loading}
+        type={loadingType}
+        message={loadingMessage}
+      />
       <h1>📚 Admin Schedule Management</h1>
 
-      {error && (
-        <div className={`${styles.alert} ${styles.alertError}`}>
-          ⚠️ {error}
-          <button onClick={() => setError(null)}>×</button>
-        </div>
-      )}
       {success && (
-        <div className={`${styles.alert} ${styles.alertSuccess}`}>
-          ✅ {success}
-          <button onClick={() => setSuccess(null)}>×</button>
+        <div className={`${styles.elegantNotify} ${styles.elegantSuccess}`}>
+          <div className={styles.elegantIcon}>✓</div>
+          <div className={styles.elegantText}>{success}</div>
+          <div className={styles.elegantSubtext}>Đã hoàn thành</div>
+          <button className={styles.elegantClose} onClick={() => setSuccess(null)}>
+            ×
+          </button>
         </div>
       )}
-      {loading && <div className={styles.loading}>🔄 Loading classes...</div>}
+
+      {error && (
+        <div className={`${styles.elegantNotify} ${styles.elegantError}`}>
+          <div className={styles.elegantIcon}>⚠</div>
+          <div className={styles.elegantText}>{error}</div>
+          <div className={styles.elegantSubtext}>Vui lòng kiểm tra lại</div>
+          <button className={styles.elegantClose} onClick={() => setError(null)}>
+            ×
+          </button>
+        </div>
+      )}
+      
       {editLoading && (
         <div className={styles.loading}>🔄 Loading recurrence data...</div>
       )}

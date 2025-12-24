@@ -5,6 +5,18 @@ from googleapiclient.discovery import build
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_ACCOUNT_FILE = 'service_account.json'
 
+credentials = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE, scopes=SCOPES
+)
+
+calendar_service = build('calendar', 'v3', credentials=credentials)
+
+# ⚡ Warm-up ngay sau khi khởi tạo service
+try:
+    calendar_service.calendarList().list(maxResults=1).execute()
+    print("✅ Google Calendar service warmed up successfully!")
+except Exception as e:
+    print(f"⚠️ Warm-up failed: {e}")
 # ========== ĐỊNH NGHĨA 2 CALENDAR ==========
 # Calendar lẻ (giờ lẻ: 1, 3, 5...)
 CALENDAR_ODD = '830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com'

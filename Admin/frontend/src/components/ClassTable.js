@@ -287,18 +287,18 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
         <table className={styles.table}>
           <thead>
             <tr>
-              <th className={styles.colCalendar}>Calendar</th>
-              <th className={styles.colSubject}>Subject</th>
-              <th className={styles.colClassName}>Class Name</th>
-              <th className={styles.colTeacher}>Teacher</th>
-              <th className={styles.colProgram}>Program</th>
-              <th className={styles.colZoom}>Zoom</th>
+              <th className={styles.colCalendar}>Lịch</th>
+              <th className={styles.colSubject}>Tiêu Đề</th>
+              <th className={styles.colClassName}>Tên Lớp</th>
+              <th className={styles.colTeacher}>Giáo Viên</th>
+              <th className={styles.colProgram}>Chương Trình</th>
+              <th className={styles.colZoom}>Link</th>
               <th className={styles.colMeetingID}>Meeting ID</th>
               <th className={styles.colPasscode}>Passcode</th>
               <th className={styles.colStart}>Start</th>
               <th className={styles.colEnd}>End</th>
-              <th className={styles.colRecurrence}>Recurrence</th>
-              <th className={styles.colActions}>Actions</th>
+              <th className={styles.colRecurrence}>Lặp Lại</th>
+              {/*<th className={styles.colActions}>Actions</th>*/}
             </tr>
           </thead>
           <tbody>
@@ -457,7 +457,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
                     </td>
                     
                     {/* ACTIONS */}
-                    <td className={styles.actions}>
+                    {/*<td className={styles.actions}>
                       <div className={styles.actionButtons}>
                         <button 
                           className={`${styles.actionButton} ${styles.editBtn}`} 
@@ -474,7 +474,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
                           🗑️
                         </button>
                       </div>
-                    </td>
+                    </td>*/}
                   </tr>
                 );
               })

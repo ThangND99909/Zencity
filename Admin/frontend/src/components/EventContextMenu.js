@@ -72,12 +72,12 @@ export default function EventContextMenu({
         👁️ Xem chi tiết
       </div>
       
-      <div 
+      {/*<div 
         className={styles.contextMenuItem}
         onClick={handleEditClick}
       >
         ✏️ Chỉnh sửa
-      </div>
+      </div>*/}
       
       <div 
         className={`${styles.contextMenuItem} ${styles.deleteItem}`}

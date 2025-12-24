@@ -6,7 +6,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 // Tạo axios instance với config mặc định
 const apiClient = axios.create({
   baseURL: API_URL,
-  timeout: 10000, // 10 seconds timeout
+  timeout: 20000, // 20 seconds timeout
   headers: {
     'Content-Type': 'application/json',
   }
@@ -141,19 +141,33 @@ export const deleteClass = async (id, deleteMode = 'this') => {
   }
 };
 
-export const suggestClass = async (teacher, duration_hours) => {
+// 🆕 HÀM ĐƠN GIẢN CHO CHECK CONFLICT (KHÔNG AI)
+export const checkScheduleConflict = async (teacher, start, end, excludeEventId = null) => {
   try {
-    const res = await apiClient.get(`/ai/suggest`, {
-      params: { 
-        teacher: teacher || undefined, // chỉ gửi nếu có giá trị
-        duration_hours 
-      },
-      timeout: 30000,
+    console.log("🔍 Checking schedule conflict (non-AI)...");
+    
+    const res = await apiClient.post(`/check-conflict`, {
+      teacher: teacher,
+      start: start,
+      end: end,
+      exclude_event_id: excludeEventId
+    }, {
+      timeout: 10000  // Giảm timeout vì không dùng AI
     });
+    
+    console.log("✅ Conflict check result:", res.data);
     return res.data;
+    
   } catch (error) {
-    console.error("AI suggest error:", error);
-    throw new Error(`AI suggestion failed: ${error.message}`);
+    console.error("❌ Conflict check failed:", error);
+    
+    // Fallback đơn giản (KHÔNG AI)
+    return {
+      has_conflict: false,
+      conflicts: [],
+      message: "Không thể kiểm tra xung đột, vui lòng kiểm tra thủ công",
+      error: error.message
+    };
   }
 };
 
@@ -180,72 +194,26 @@ export const getEvent = async (eventId, calendarId = "primary") => {
   }
 };
 
-export const checkScheduleConflict = async (teacher, start, end, excludeEventId = null) => {
+// 🆕 HÀM SUGGEST SIMPLE (KHÔNG AI) - nếu bạn cần giữ tính năng này
+export const suggestClass = async (teacher, duration_hours) => {
   try {
-    console.log("🔍 Checking schedule conflict...");
+    // Simple fallback: đề xuất ngày mai 9:00 AM
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
     
-    const res = await apiClient.post(`/check-conflict`, {
-      teacher: teacher,
-      start: start,
-      end: end,
-      exclude_event_id: excludeEventId
-    }, {
-      timeout: 60000  // 🆕 60 seconds timeout
-    });
+    const endTime = new Date(tomorrow);
+    endTime.setHours(tomorrow.getHours() + duration_hours);
     
-    console.log("✅ Conflict check SUCCESS:", res.data);
-    return res.data;
-    
+    return {
+      start: tomorrow.toISOString(),
+      end: endTime.toISOString(),
+      note: "Manual scheduling (AI disabled)"
+    };
   } catch (error) {
-    console.error("❌ Conflict check FAILED:", error);
-    
-    // 🆕 THỬ LẠI 1 LẦN NỮA
-    try {
-      console.log("🔄 Retrying conflict check...");
-      const retryRes = await apiClient.post(`/check-conflict`, {
-        teacher: teacher,
-        start: start,
-        end: end,
-        exclude_event_id: excludeEventId
-      }, {
-        timeout: 30000
-      });
-      console.log("✅ Retry SUCCESS:", retryRes.data);
-      return retryRes.data;
-    } catch (retryError) {
-      console.error("❌ Retry also failed:", retryError);
-      
-      // 🆕 FALLBACK: DÙNG TRADITIONAL CHECK TRỰC TIẾP
-      alert("⚠️ Đang dùng kiểm tra xung đột cục bộ...");
-      return await traditionalFallbackCheck(teacher, start, end);
-    }
+    console.error("Suggest class error:", error);
+    throw new Error(`Scheduling failed: ${error.message}`);
   }
-};
-
-// 🆕 HÀM FALLBACK CỤC BỘ
-const traditionalFallbackCheck = async (teacher, start, end) => {
-  // Logic check đơn giản không cần API
-  const now = new Date();
-  const randomConflict = Math.random() > 0.7; // 30% chance có conflict
-  
-  return {
-    has_conflict: randomConflict,
-    conflicts: randomConflict ? [{
-      event_summary: "Lịch mẫu - " + teacher + " - Môn học",
-      event_teacher: teacher,
-      event_start: new Date(now.getTime() + 3600000).toISOString(),
-      event_end: new Date(now.getTime() + 7200000).toISOString(),
-      conflict_type: "potential_conflict"
-    }] : [],
-    suggestions: [
-      {
-        start: new Date(now.getTime() + 86400000).toISOString(),
-        end: new Date(now.getTime() + 90000000).toISOString(),
-        description: "Ngày mai 9:00 AM"
-      }
-    ],
-    ai_analysis: "Kiểm tra cục bộ: " + (randomConflict ? "Có thể có xung đột" : "Không có xung đột")
-  };
 };
 
 export const getTimezones = async () => {
