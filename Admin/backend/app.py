@@ -17,7 +17,7 @@ app = FastAPI()
 ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Local development
     "http://localhost:8000",  # Local development
-    "https://c3514afb.zencity-smartcalendar.pages.dev",  # Cloudflare Pages production
+    "https://zencity-smartcalendar.pages.dev",  # Cloudflare Pages production
     "*"  # Allow all (for testing, restrict in production)
 ]
 

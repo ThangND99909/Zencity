@@ -1,7 +1,8 @@
 // frontend/src/services/api.js
 import axios from "axios";
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+//const API_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+const API_URL = process.env.REACT_APP_BACKEND_URL || "https://zencity-backend.onrender.com";
 
 // Tạo axios instance với config mặc định
 const apiClient = axios.create({
