@@ -13,12 +13,20 @@ from recurrence_helper import build_recurrence_description
 
 app = FastAPI()
 
-# CORS
+# CORS - Allow frontend domain
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Local development
+    "http://localhost:8000",  # Local development
+    "https://c3514afb.zencity-smartcalendar.pages.dev",  # Cloudflare Pages production
+    "*"  # Allow all (for testing, restrict in production)
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    allow_credentials=True,
 )
 
 # ---------------- Pydantic Model ----------------

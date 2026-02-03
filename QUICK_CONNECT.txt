@@ -1,0 +1,42 @@
+# 🚀 QUICK CONNECT GUIDE - Frontend & Backend
+
+## ✅ Status:
+- Backend: ✓ https://zencity-backend.onrender.com
+- Frontend: ✓ https://c3514afb.zencity-smartcalendar.pages.dev
+
+## 3 Bước Nhanh:
+
+### 1️⃣ Push Backend CORS Update (30 giây)
+```bash
+cd Admin/backend
+git add app.py
+git commit -m "Update CORS for Cloudflare"
+git push
+# Render auto-redeploy ✓
+```
+
+### 2️⃣ Cập nhật Env Var trên Cloudflare (1 phút)
+```
+https://dash.cloudflare.com → Pages → Settings → Environment Variables
+
+Production:
+  Name:  REACT_APP_BACKEND_URL
+  Value: https://zencity-backend.onrender.com
+
+Save & Deploy ✓
+```
+
+### 3️⃣ Test Kết Nối (30 giây)
+```bash
+# Browser Console:
+fetch('https://zencity-backend.onrender.com/api/events')
+  .then(r => r.json())
+  .then(d => console.log('✅ Connected!', d))
+```
+
+---
+
+## ✨ Done! Kết nối thành công!
+
+Xem chi tiết: CONNECT_FRONTEND_BACKEND.md
+
