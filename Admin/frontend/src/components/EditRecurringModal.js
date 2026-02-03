@@ -19,7 +19,7 @@ export default function EditRecurringModal({
   return (
     <div className={styles.editRecurringOverlay}>
       <div className={styles.editRecurringBox}>
-        <div className={styles.editRecurringHeader}>
+        {/*<div className={styles.editRecurringHeader}>
           🔄 Chỉnh sửa sự kiện lặp lại
         </div>
         
@@ -33,7 +33,7 @@ export default function EditRecurringModal({
             event.recurrence_description || 
             (event.recurrence ? `${event.recurrence} (${event.repeat_count || 1} lần)` : "Không lặp")
           }</p>
-        </div>
+        </div>*/}
         
         <div className={styles.editOptions}>
           <p><strong>Chọn cách chỉnh sửa:</strong></p>

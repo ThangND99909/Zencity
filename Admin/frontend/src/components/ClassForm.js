@@ -34,18 +34,18 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
   const [timezoneOptions, setTimezoneOptions] = useState([
     { value: "Asia/Ho_Chi_Minh", label: "🇻🇳 Giờ Việt Nam (UTC+7)" },
     { value: "America/Chicago", label: "🇺🇸 Giờ miền Trung - Chicago (UTC-6/-5)" },
-    { value: "America/New_York", label: "🇺🇸 Giờ miền Đông - New York (UTC-5/-4)" },
-    { value: "America/Denver", label: "🇺🇸 Giờ miền Núi - Denver (UTC-7/-6)" },
-    { value: "America/Los_Angeles", label: "🇺🇸 Giờ miền Tây - Los Angeles (UTC-8/-7)" },
-    { value: "Europe/London", label: "🇬🇧 Giờ London (UTC+0/+1)" },
-    { value: "Europe/Paris", label: "🇫🇷 Giờ Paris (UTC+1/+2)" },
-    { value: "Europe/Berlin", label: "🇩🇪 Giờ Berlin (UTC+1/+2)" },
-    { value: "Asia/Tokyo", label: "🇯🇵 Giờ Tokyo (UTC+9)" },
-    { value: "Asia/Seoul", label: "🇰🇷 Giờ Seoul (UTC+9)" },
-    { value: "Asia/Singapore", label: "🇸🇬 Giờ Singapore (UTC+8)" },
-    { value: "Australia/Sydney", label: "🇦🇺 Giờ Sydney (UTC+10/+11)" },
-    { value: "Pacific/Auckland", label: "🇳🇿 Giờ New Zealand (UTC+12/+13)" },
-    { value: "UTC", label: "🌐 Giờ UTC" }
+    //{ value: "America/New_York", label: "🇺🇸 Giờ miền Đông - New York (UTC-5/-4)" },
+    //{ value: "America/Denver", label: "🇺🇸 Giờ miền Núi - Denver (UTC-7/-6)" },
+    //{ value: "America/Los_Angeles", label: "🇺🇸 Giờ miền Tây - Los Angeles (UTC-8/-7)" },
+    //{ value: "Europe/London", label: "🇬🇧 Giờ London (UTC+0/+1)" },
+    //{ value: "Europe/Paris", label: "🇫🇷 Giờ Paris (UTC+1/+2)" },
+    //{ value: "Europe/Berlin", label: "🇩🇪 Giờ Berlin (UTC+1/+2)" },
+    //{ value: "Asia/Tokyo", label: "🇯🇵 Giờ Tokyo (UTC+9)" },
+    //{ value: "Asia/Seoul", label: "🇰🇷 Giờ Seoul (UTC+9)" },
+    //{ value: "Asia/Singapore", label: "🇸🇬 Giờ Singapore (UTC+8)" },
+    //{ value: "Australia/Sydney", label: "🇦🇺 Giờ Sydney (UTC+10/+11)" },
+    //{ value: "Pacific/Auckland", label: "🇳🇿 Giờ New Zealand (UTC+12/+13)" },
+    //{ value: "UTC", label: "🌐 Giờ UTC" }
   ]);
 
   // ✅ HÀM XÁC ĐỊNH CALENDAR TỪ GIỜ

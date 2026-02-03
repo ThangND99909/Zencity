@@ -1,8 +1,31 @@
-fastapi
-uvicorn
-pydantic
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-python-dotenv
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Data Validation
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Google API & Authentication
+google-api-python-client==1.12.5
+google-auth==2.25.2
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.0
+google-auth-stubs==0.2.0
+
+# Google Generative AI (Gemini)
+google-generativeai==0.3.0
+
+# Timezone handling
+pytz==2023.3
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Additional utilities
+httplib2==0.22.0
+requests==2.31.0
+
+# Production server (optional, if not using uvicorn alone)
+# gunicorn==21.2.0
 

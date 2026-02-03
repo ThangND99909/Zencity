@@ -733,5 +733,26 @@
     "passcode": "fds",
     "classname": "gfd",
     "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "2p6gfnonjor1ntm66ve5vkahkg": {
+    "zoom_link": "https://zoom.com",
+    "meeting_id": "123",
+    "passcode": "456",
+    "classname": "Room 1",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "uf36kcd2n4mla2loamoate0bro": {
+    "zoom_link": "https://zoom.com",
+    "meeting_id": "567",
+    "passcode": "789",
+    "classname": "Room 2",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
+  },
+  "7b225spm58k4s7460h44aqkgrg": {
+    "zoom_link": "gfd",
+    "meeting_id": "hgfd",
+    "passcode": "gfd",
+    "classname": "gdfg",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
   }
 }

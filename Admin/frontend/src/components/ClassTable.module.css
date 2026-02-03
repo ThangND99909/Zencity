@@ -1,210 +1,561 @@
 .tableContainer {
   width: 100%;
   overflow-x: auto;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border: 1px solid #e9ecef;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  padding: 20px;
+  margin: 20px 0;
+  position: relative;
+}
+
+.tableContainer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #1a73e8 0%, #34a853 100%);
+  border-radius: 12px 12px 0 0;
+}
+
+/* ============ HEADER SECTION ============ */
+.headerSection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.stats {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.statItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #f8f9fa;
   border-radius: 8px;
-  background-color: #fff;
-  border: 1px solid #dee2e6;
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+}
+
+.statItem:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.statOdd {
+  border-left: 4px solid #1a73e8;
+  background: linear-gradient(135deg, #e8f0fe 0%, #ffffff 100%);
+}
+
+.statEven {
+  border-left: 4px solid #34a853;
+  background: linear-gradient(135deg, #e6f4ea 0%, #ffffff 100%);
+}
+
+.statLabel {
+  font-weight: 500;
+  color: #495057;
+  font-size: 14px;
+}
+
+.statValue {
+  font-weight: 700;
+  font-size: 18px;
+  color: #212529;
+}
+
+/* ============ FILTERS ============ */
+.filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filterInput, .filterSelect {
+  padding: 10px 16px;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  background: white;
+  min-width: 200px;
+}
+
+.filterInput:focus, .filterSelect:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.1);
+}
+
+.filterInput::placeholder {
+  color: #6c757d;
+  opacity: 0.7;
+}
+
+/* ============ TABLE STYLES ============ */
+.tableWrapper {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #e9ecef;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 14px;
 }
 
-th, td {
-  padding: 10px 12px;
-  text-align: left;
-  border-bottom: 1px solid #dee2e6;
+.table thead {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 }
 
-th {
-  background-color: #f8f9fa;
+.table th {
+  padding: 16px;
   font-weight: 600;
-  color: #343a40;
+  color: #495057;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #dee2e6;
+  position: sticky;
+  top: 0;
+  background: inherit;
+  z-index: 10;
 }
 
-tr:hover {
-  background-color: #f1f3f5;
+.table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f3f5;
+  vertical-align: middle;
+  transition: all 0.2s ease;
 }
 
-.actions {
+/* ============ ROW STYLES ============ */
+.rowOdd {
+  background: linear-gradient(90deg, rgba(26, 115, 232, 0.02) 0%, rgba(26, 115, 232, 0.01) 100%);
+  border-left: 3px solid #1a73e8;
+}
+
+.rowEven {
+  background: linear-gradient(90deg, rgba(52, 168, 83, 0.02) 0%, rgba(52, 168, 83, 0.01) 100%);
+  border-left: 3px solid #34a853;
+}
+
+.tableRow:hover {
+  background: #f8f9fa !important;
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+/* ============ CALENDAR BADGE ============ */
+.calendarCell {
+  text-align: center;
+}
+
+.calendarBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 18px;
+  transition: all 0.3s ease;
+}
+
+.badgeOdd {
+  background: rgba(26, 115, 232, 0.1);
+  color: #1a73e8;
+  border: 2px solid rgba(26, 115, 232, 0.2);
+}
+
+.badgeEven {
+  background: rgba(52, 168, 83, 0.1);
+  color: #34a853;
+  border: 2px solid rgba(52, 168, 83, 0.2);
+}
+
+/* ============ SUBJECT CELL ============ */
+.subjectCell {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.editBtn, .deleteBtn {
-  border: none;
-  cursor: pointer;
-  padding: 6px 10px;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: 0.2s;
+.subjectText {
+  font-weight: 600;
+  color: #212529;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.editBtn {
-  background-color: #007bff;
-  color: white;
+.recurrenceIcon {
+  color: #ff6b35;
+  font-size: 16px;
+  animation: pulse 2s infinite;
 }
 
-.editBtn:hover {
-  background-color: #0069d9;
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
 }
 
-.deleteBtn {
-  background-color: #dc3545;
-  color: white;
-}
-
-.deleteBtn:hover {
-  background-color: #c82333;
-}
-
-/* Zoom link styles */
+/* ============ ZOOM LINK CONTAINER ============ */
 .zoomLinkContainer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  max-width: 250px;
+  max-width: 300px;
 }
 
-.zoomLink {
+.zoomLinkText {
   flex: 1;
-  color: #007bff;
-  text-decoration: none;
-  font-size: 12px;
+  color: #1a73e8;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 13px;
   word-break: break-all;
-  cursor: default;
-  padding: 4px;
-  border-radius: 3px;
-  background-color: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background: rgba(26, 115, 232, 0.05);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(26, 115, 232, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
 }
 
-.zoomActions {
+.zoomLinkText:hover {
+  background: rgba(26, 115, 232, 0.1);
+  border-color: #1a73e8;
+}
+
+.buttonGroup {
   display: flex;
   gap: 4px;
 }
 
-.copyButton, .openButton {
-  background: none;
-  border: 1px solid #dee2e6;
-  border-radius: 3px;
-  padding: 4px 6px;
-  cursor: pointer;
-  font-size: 11px;
-  transition: all 0.2s ease;
+.iconButton {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  background: #f8f9fa;
 }
 
 .copyButton:hover {
-  background-color: #e9ecef;
-  border-color: #007bff;
+  background: #1a73e8;
+  color: white;
+  transform: scale(1.1);
 }
 
 .openButton:hover {
-  background-color: #e9ecef;
-  border-color: #28a745;
+  background: #34a853;
+  color: white;
+  transform: scale(1.1);
 }
 
-/* Meeting ID and Passcode containers */
+.copyButton.copied {
+  background: #34a853 !important;
+  color: white !important;
+  animation: bounce 0.5s;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* ============ MEETING ID & PASSCODE ============ */
 .meetingIdContainer, .passcodeContainer {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.meetingInfo {
-  background-color: #f8f9fa;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid #dee2e6;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  color: #495057;
-  flex: 1;
-}
-
-.passcodeInfo {
-  background-color: #fff3cd;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid #ffeaa7;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  color: #856404;
+.meetingIdContainer span {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
   font-weight: 600;
-  flex: 1;
+  background: #f8f9fa;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+  min-width: 100px;
+  text-align: center;
 }
 
-/* Responsive design */
+.passcodeContainer span {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-weight: 700;
+  background: #fff3cd;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+  min-width: 60px;
+  text-align: center;
+}
+
+/* ============ TIME CELLS ============ */
+.timeCell {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 13px;
+  color: #495057;
+  background: rgba(233, 236, 239, 0.3);
+  border-radius: 6px;
+  padding: 10px !important;
+  text-align: center;
+  min-width: 180px;
+}
+
+/* ============ RECURRENCE ============ */
+.recurrenceText {
+  background: rgba(255, 107, 53, 0.1);
+  color: #ff6b35;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: help;
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recurrenceIconSmall {
+  color: #ff6b35;
+  font-size: 14px;
+  animation: spin 3s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ============ FOOTER ============ */
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 24px;
+  padding: 16px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.footerStats {
+  font-size: 14px;
+  color: #6c757d;
+}
+
+.footerStats strong {
+  color: #212529;
+}
+
+.filterNote {
+  color: #1a73e8;
+  font-weight: 500;
+  margin-left: 12px;
+}
+
+.exportSection {
+  display: flex;
+  gap: 12px;
+}
+
+.exportButton {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(26, 115, 232, 0.3);
+}
+
+.exportButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(26, 115, 232, 0.4);
+}
+
+.exportButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnWarning {
+  background: linear-gradient(135deg, #ff6b35 0%, #d84315 100%);
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+}
+
+.btnWarning:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
+}
+
+/* ============ NO DATA ============ */
+.noData {
+  text-align: center;
+  padding: 60px !important;
+  color: #6c757d;
+  font-size: 16px;
+  background: #f8f9fa;
+}
+
+.noData::before {
+  content: "📭";
+  font-size: 24px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+/* ============ RESPONSIVE DESIGN ============ */
 @media (max-width: 1200px) {
-  .table {
-    font-size: 13px;
+  .headerSection {
+    flex-direction: column;
+    gap: 16px;
   }
   
-  th, td {
-    padding: 8px 10px;
+  .filters {
+    width: 100%;
+  }
+  
+  .filterInput, .filterSelect {
+    flex: 1;
+    min-width: 150px;
+  }
+}
+
+@media (max-width: 992px) {
+  .tableContainer {
+    padding: 16px;
+  }
+  
+  .table th, .table td {
+    padding: 12px 14px;
   }
   
   .zoomLinkContainer {
-    max-width: 200px;
+    max-width: 250px;
+  }
+  
+  .timeCell {
+    min-width: 160px;
   }
 }
 
 @media (max-width: 768px) {
   .tableContainer {
-    font-size: 12px;
+    padding: 12px;
+    margin: 12px 0;
   }
   
-  th, td {
-    padding: 6px 8px;
+  .headerSection, .footer {
+    padding: 12px;
   }
   
-  .actions {
+  .stats {
     flex-direction: column;
-    gap: 4px;
+    width: 100%;
   }
   
-  .editBtn, .deleteBtn {
-    padding: 4px 8px;
-    font-size: 12px;
+  .statItem {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .filters {
+    flex-direction: column;
+  }
+  
+  .filterInput, .filterSelect {
+    width: 100%;
+  }
+  
+  .tableWrapper {
+    overflow-x: auto;
+  }
+  
+  .table {
+    min-width: 800px;
   }
   
   .zoomLinkContainer {
     flex-direction: column;
-    gap: 4px;
-    max-width: 150px;
+    align-items: flex-start;
+    gap: 8px;
+    max-width: 200px;
   }
   
-  .zoomActions {
+  .buttonGroup {
     align-self: flex-end;
   }
   
-  .meetingIdContainer, .passcodeContainer {
+  .footer {
     flex-direction: column;
-    gap: 4px;
+    gap: 16px;
+    text-align: center;
   }
 }
-.copyButton.copied {
-  background-color: #d4edda;
-  border-color: #28a745;
+
+/* ============ SCROLLBAR STYLING ============ */
+.tableWrapper::-webkit-scrollbar {
+  height: 8px;
 }
 
-/* Giới hạn nội dung dài (Zoom link, Meeting ID, Passcode) */
-td span, .zoomLinkContainer span {
-  display: inline-block;
-  max-width: 180px;     /* Giới hạn độ rộng */
-  white-space: nowrap;  /* Không xuống dòng */
-  overflow: hidden;     /* Ẩn phần dư */
-  text-overflow: ellipsis; /* Thêm dấu ... */
-  vertical-align: middle;
+.tableWrapper::-webkit-scrollbar-track {
+  background: #f1f3f5;
+  border-radius: 4px;
 }
 
-/* Khi hover thì hiện full nội dung trong tooltip */
-td span[title] {
-  cursor: pointer;
+.tableWrapper::-webkit-scrollbar-thumb {
+  background: #adb5bd;
+  border-radius: 4px;
+}
+
+.tableWrapper::-webkit-scrollbar-thumb:hover {
+  background: #6c757d;
+}
+
+/* ============ LOADING ANIMATION ============ */
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+.loading-row {
+  animation: shimmer 2s infinite linear;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 1000px 100%;
 }

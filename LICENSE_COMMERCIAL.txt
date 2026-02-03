@@ -1,0 +1,18 @@
+Smart Calendar Sync Pro - Commercial License
+
+Copyright (c) 2025 Thang Nguyen
+
+This software is licensed for personal or commercial use by a single entity (individual or organization).
+
+The buyer is granted the right to:
+- Use and modify the source code for personal or client projects.
+- Deploy the software on one or multiple servers for internal use.
+
+The buyer is NOT allowed to:
+- Resell or redistribute the source code in original or modified form.
+- Upload or share the source code publicly (GitHub, forums, etc.).
+- Claim authorship of the original code.
+
+Violation of these terms will result in license termination and potential DMCA action.
+
+For extended or resale license, contact: thangnd.pnv@gmail.com

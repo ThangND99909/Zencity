@@ -311,21 +311,21 @@ def get_timezones():
     return {
         "timezones": [
             {"value": "Asia/Ho_Chi_Minh", "label": "🇻🇳 Giờ Việt Nam (UTC+7)"},
-            {"value": "Asia/Bangkok", "label": "🇹🇭 Giờ Thái Lan (UTC+7)"},
-            {"value": "Asia/Singapore", "label": "🇸🇬 Giờ Singapore (UTC+8)"},
-            {"value": "Asia/Tokyo", "label": "🇯🇵 Giờ Nhật Bản (UTC+9)"},
-            {"value": "Asia/Seoul", "label": "🇰🇷 Giờ Hàn Quốc (UTC+9)"},
-            {"value": "Asia/Shanghai", "label": "🇨🇳 Giờ Trung Quốc (UTC+8)"},
-            {"value": "America/New_York", "label": "🇺🇸 Giờ Miền Đông (UTC-5/-4)"},
+            #{"value": "Asia/Bangkok", "label": "🇹🇭 Giờ Thái Lan (UTC+7)"},
+            #{"value": "Asia/Singapore", "label": "🇸🇬 Giờ Singapore (UTC+8)"},
+            #{"value": "Asia/Tokyo", "label": "🇯🇵 Giờ Nhật Bản (UTC+9)"},
+            #{"value": "Asia/Seoul", "label": "🇰🇷 Giờ Hàn Quốc (UTC+9)"},
+            #{"value": "Asia/Shanghai", "label": "🇨🇳 Giờ Trung Quốc (UTC+8)"},
+            #{"value": "America/New_York", "label": "🇺🇸 Giờ Miền Đông (UTC-5/-4)"},
             {"value": "America/Chicago", "label": "🇺🇸 Giờ Miền Trung (UTC-6/-5)"},
-            {"value": "America/Denver", "label": "🇺🇸 Giờ Miền Núi (UTC-7/-6)"},
-            {"value": "America/Los_Angeles", "label": "🇺🇸 Giờ Miền Tây (UTC-8/-7)"},
-            {"value": "Europe/London", "label": "🇬🇧 Giờ London (UTC+0/+1)"},
-            {"value": "Europe/Paris", "label": "🇫🇷 Giờ Paris (UTC+1/+2)"},
-            {"value": "Europe/Berlin", "label": "🇩🇪 Giờ Berlin (UTC+1/+2)"},
-            {"value": "Australia/Sydney", "label": "🇦🇺 Giờ Sydney (UTC+10/+11)"},
-            {"value": "Pacific/Auckland", "label": "🇳🇿 Giờ New Zealand (UTC+12/+13)"},
-            {"value": "UTC", "label": "🌐 Giờ UTC"}
+            #{"value": "America/Denver", "label": "🇺🇸 Giờ Miền Núi (UTC-7/-6)"},
+            #{"value": "America/Los_Angeles", "label": "🇺🇸 Giờ Miền Tây (UTC-8/-7)"},
+            #{"value": "Europe/London", "label": "🇬🇧 Giờ London (UTC+0/+1)"},
+            #{"value": "Europe/Paris", "label": "🇫🇷 Giờ Paris (UTC+1/+2)"},
+            #{"value": "Europe/Berlin", "label": "🇩🇪 Giờ Berlin (UTC+1/+2)"},
+            #{"value": "Australia/Sydney", "label": "🇦🇺 Giờ Sydney (UTC+10/+11)"},
+            #{"value": "Pacific/Auckland", "label": "🇳🇿 Giờ New Zealand (UTC+12/+13)"},
+            #{"value": "UTC", "label": "🌐 Giờ UTC"}
         ]
     }
 

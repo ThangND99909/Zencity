@@ -6,7 +6,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 // Tạo axios instance với config mặc định
 const apiClient = axios.create({
   baseURL: API_URL,
-  timeout: 20000, // 20 seconds timeout
+  timeout: 40000, // 40 seconds timeout
   headers: {
     'Content-Type': 'application/json',
   }

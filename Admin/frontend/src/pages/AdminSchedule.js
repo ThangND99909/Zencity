@@ -7,6 +7,9 @@ import CalendarView from "../components/CalendarView";
 import styles from "./AdminSchedule.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
 import LoadingOverlay from '../components/LoadingOverlay';
+import PasscodeModal from "../components/PasscodeModal";
+
+const CORRECT_PASSCODE = "1234"; // 🔐 Thay đổi passcode của bạn tại đây
 
 export default function AdminSchedule() {
   const [classes, setClasses] = useState([]);
@@ -20,6 +23,8 @@ export default function AdminSchedule() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [calendarFilter, setCalendarFilter] = useState('both'); // 'odd', 'even', 'both'
+  const [isPasscodeVerified, setIsPasscodeVerified] = useState(false);
+  const [showPasscodeModal, setShowPasscodeModal] = useState(true);
 
   // Hàm show loading
   const showLoading = (type = 'default', customMessage = '') => {
@@ -33,6 +38,20 @@ export default function AdminSchedule() {
   const hideLoading = () => {
     setLoading(false);
     setLoadingMessage('');
+  };
+
+  // 🔐 Xử lý xác thực passcode
+  const handlePasscodeSubmit = async (inputPasscode) => {
+    // Giả lập delay để tạo cảm giác như đang kiểm tra
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    if (inputPasscode === CORRECT_PASSCODE) {
+      setIsPasscodeVerified(true);
+      setShowPasscodeModal(false);
+      return { success: true, message: "Passcode chính xác" };
+    } else {
+      return { success: false, message: "Passcode không chính xác" };
+    }
   };
 
   const loadClasses = async (filter = calendarFilter) => {
@@ -72,9 +91,12 @@ export default function AdminSchedule() {
     }
   };
 
+  // 🔐 Chỉ load data khi đã xác thực passcode
   useEffect(() => {
-    loadClasses();
-  }, []);
+    if (isPasscodeVerified) {
+      loadClasses();
+    }
+  }, [isPasscodeVerified]);
 
   const showMessage = (message, type = "error") => {
     if (type === "error") {
@@ -486,6 +508,32 @@ export default function AdminSchedule() {
 
   return (
     <div className={styles.container}>
+      {/* 🔐 Passcode Modal */}
+      <PasscodeModal 
+        isOpen={showPasscodeModal} 
+        onSubmit={handlePasscodeSubmit}
+      />
+
+      {/* Ẩn toàn bộ giao diện khi chưa xác thực passcode */}
+      {!isPasscodeVerified ? (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: '#f5f5f5',
+          zIndex: 998,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <div style={{ textAlign: 'center', color: '#999' }}>
+            <h2>Vui lòng nhập passcode để tiếp tục</h2>
+          </div>
+        </div>
+      ) : (
+        <>
       <LoadingOverlay 
         isLoading={loading}
         type={loadingType}
@@ -630,6 +678,8 @@ export default function AdminSchedule() {
         {showForm && (isEditing ? "Editing Mode" : "Creating Mode")} • 
         Last updated: {new Date().toLocaleTimeString()}
       </div>
+        </>
+      )}
     </div>
   );
 }
