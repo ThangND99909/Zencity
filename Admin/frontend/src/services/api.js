@@ -7,7 +7,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL || "https://zencity-backend.on
 // Tạo axios instance với config mặc định
 const apiClient = axios.create({
   baseURL: API_URL,
-  timeout: 40000, // 40 seconds timeout
+  timeout: 90000, // 90 seconds timeout
   headers: {
     'Content-Type': 'application/json',
   }
