@@ -1,6 +1,24 @@
 // frontend/src/services/api.js
 import axios from "axios";
 
+// 🕐 Helper retry khi backend Render đang "ngủ"
+const safeFetch = async (fn, retries = 3, delay = 5000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      // Nếu là lỗi kết nối (Render sleep)
+      if (error.message.includes("Cannot connect to server") || error.code === "ECONNABORTED") {
+        console.warn(`⚙️ Backend đang khởi động... thử lại sau ${delay / 1000}s (${i + 1}/${retries})`);
+        if (i < retries - 1) {
+          await new Promise(res => setTimeout(res, delay));
+          continue;
+        }
+      }
+      throw error;
+    }
+  }
+};
 //const API_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 const API_URL = process.env.REACT_APP_BACKEND_URL || "https://zencity-backend.onrender.com";
 
@@ -53,10 +71,12 @@ apiClient.interceptors.response.use(
 
 export const getClasses = async (calendarId = "primary") => {
   try {
+    return await safeFetch(async () => {
     const res = await apiClient.get(`/classes`, {
       params: { calendar_id: calendarId, include_recurrence: true},
     });
     return res.data;
+    });
   } catch (error) {
     console.error("Get classes error:", error);
     throw new Error(`Failed to fetch classes: ${error.message}`);
@@ -65,9 +85,11 @@ export const getClasses = async (calendarId = "primary") => {
 
 export const addClass = async (data) => {
   try {
+    return await safeFetch(async () => {
     console.log("📤 Sending class data to backend:", data);
     const res = await apiClient.post(`/classes`, data);
     return res.data;
+    });
   } catch (error) {
     console.error("Add class error:", error);
     throw error;
@@ -175,8 +197,10 @@ export const checkScheduleConflict = async (teacher, start, end, excludeEventId 
 // Health check function để test connection
 export const healthCheck = async () => {
   try {
+    return await safeFetch(async () => {
     const res = await apiClient.get(`/health`);
     return res.data;
+    });
   } catch (error) {
     console.error("Health check error:", error);
     throw new Error(`Backend connection failed: ${error.message}`);

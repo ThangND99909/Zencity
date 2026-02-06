@@ -1,5 +1,5 @@
 // frontend/src/pages/AdminSchedule.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { getClasses, addClass, updateClass, deleteClass, suggestClass, getEvent } from "../services/api";
 import ClassTable from "../components/ClassTable";
 import ClassForm from "../components/ClassForm";
@@ -25,6 +25,9 @@ export default function AdminSchedule() {
   const [calendarFilter, setCalendarFilter] = useState('both'); // 'odd', 'even', 'both'
   const [isPasscodeVerified, setIsPasscodeVerified] = useState(false);
   const [showPasscodeModal, setShowPasscodeModal] = useState(true);
+
+  // ✅ THÊM REF CHO CALENDAR VIEW
+  const calendarViewRef = useRef(null);
 
   // Hàm show loading
   const showLoading = (type = 'default', customMessage = '') => {
@@ -117,7 +120,7 @@ export default function AdminSchedule() {
   const handleAdd = async (data) => {
     try {
       showLoading('add');
-      await addClass({
+      const createResponse = await addClass({
         name: data.name,
         classname: data.classname || "",
         teacher: data.teacher || "",
@@ -136,9 +139,41 @@ export default function AdminSchedule() {
       });
       await loadClasses(calendarFilter);
       setCreatingClass(null);
+      
+      // ✅ SHOW CALENDAR TỚI TRƯỚC ĐỂ ĐỢI RENDER
+      if (!showCalendar) {
+        setShowCalendar(true);
+      }
+      
+      // ✅ SAU ĐÓ GỌI SCROLL (ĐỢI STATE UPDATE VÀ CALENDAR REFRESH)
       setTimeout(() => {
-        showMessage("Class added successfully!", "success");
-      }, 300);
+        if (calendarViewRef.current && createResponse) {
+          console.log("📞 Calling scrollToEvent from handleAdd");
+          // ✅ PROPERLY EXTRACT START TIME FROM API RESPONSE
+          let eventStartTime = null;
+          
+          // Handle Google Calendar format {dateTime: "...", date: "..."}
+          if (createResponse.start && typeof createResponse.start === 'object') {
+            eventStartTime = createResponse.start.dateTime || createResponse.start.date;
+          } else if (createResponse.start && typeof createResponse.start === 'string') {
+            eventStartTime = createResponse.start;
+          } else if (data.start) {
+            // Fallback to original data
+            eventStartTime = data.start;
+          }
+          
+          console.log("📍 Using event start time for scroll:", eventStartTime);
+          if (eventStartTime) {
+            calendarViewRef.current.scrollToEvent(eventStartTime);
+          } else {
+            console.warn("⚠️ Could not extract event start time from response");
+          }
+        }
+      }, 300); // Increased delay to ensure loadClasses completes
+      
+      setTimeout(() => {
+        showMessage("Class added successfully! 🎉", "success");
+      }, 400);
     } catch (err) {
       showMessage("Failed to add class: " + err.message);
     } finally {
@@ -628,6 +663,7 @@ export default function AdminSchedule() {
         {showCalendar ? (
           <div className={styles.calendarWrapper}>
             <CalendarView
+              ref={calendarViewRef}
               events={classes}
               onEventClick={handleEventClick}
               onCreateEvent={(event) => {

@@ -74,9 +74,9 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
       }
       
       const info = extractClassInfo(cls);
-      const matchName = cls.summary.toLowerCase().includes(filters.name.toLowerCase());
-      const matchProgram = info.program.toLowerCase().includes(filters.program.toLowerCase());
-      const matchTeacher = info.teacher.toLowerCase().includes(filters.teacher.toLowerCase());
+      const matchName = (cls.summary || "").toLowerCase().includes(filters.name.toLowerCase());
+      const matchProgram = (info.program || "").toLowerCase().includes(filters.program.toLowerCase());
+      const matchTeacher = (info.teacher || "").toLowerCase().includes(filters.teacher.toLowerCase());
       
       // ✅ FILTER CALENDAR (NẾU CÓ)
       let matchCalendar = true;

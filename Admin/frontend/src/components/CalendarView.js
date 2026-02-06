@@ -1,5 +1,5 @@
 // frontend/src/components/CalendarView.js
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import styles from "./CalendarView.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
 import { getEvent } from "../services/api";
@@ -12,7 +12,7 @@ import moment from "moment-timezone";
 
 
 
-export default function CalendarView({ events, onEventClick, onDateSelect, onCreateEvent, onDeleteEvent, calendarFilter }) {
+const CalendarView = forwardRef(function CalendarView({ events, onEventClick, onDateSelect, onCreateEvent, onDeleteEvent, calendarFilter }, ref) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPopup, setShowPopup] = useState(false);
@@ -22,6 +22,7 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   const [newEvent, setNewEvent] = useState(null);
   const popupRef = useRef(null);
   const eventsRef = useRef(null);
+  const scrollTargetRef = useRef(null); // ✅ THÊM REF LƯU TRỮ THỜI GIAN CẦN SCROLL
   const today = new Date();
 
   // ✅ Thêm các state mới cho context menu và delete modal
@@ -87,6 +88,87 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   ]);
 
   const timeSlots = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, "0")}:00`);
+
+  // ✅ THÊM HÀM SCROLL ĐẾN EVENT VỪA TẠO
+  useImperativeHandle(ref, () => ({
+    scrollToEvent: (eventStartTime) => {
+      if (!eventStartTime) {
+        console.warn("⚠️ scrollToEvent called with invalid time:", eventStartTime);
+        return;
+      }
+      
+      console.log("📍 scrollToEvent called with:", eventStartTime);
+      
+      try {
+        // ✅ HANDLE DIFFERENT INPUT FORMATS
+        let timeString = null;
+        
+        // Format 1: Google Calendar object {dateTime: "...", date: "..."}
+        if (typeof eventStartTime === 'object') {
+          if (eventStartTime.dateTime) {
+            timeString = eventStartTime.dateTime;
+            console.log("📦 Extracted dateTime from object:", timeString);
+          } else if (eventStartTime.date) {
+            timeString = eventStartTime.date;
+            console.log("📦 Extracted date from object:", timeString);
+          } else if (eventStartTime.start) {
+            timeString = eventStartTime.start;
+            console.log("📦 Extracted start from object:", timeString);
+          }
+        } else if (typeof eventStartTime === 'string') {
+          // Format 2: Direct string
+          timeString = eventStartTime;
+        }
+        
+        if (!timeString) {
+          console.warn("⚠️ Could not extract time string from input:", eventStartTime);
+          return;
+        }
+        
+        // ✅ PARSE THỜI GIAN - HỖ TRỢ ĐỊNH DẠNG ISO VÀ TIMEZONE
+        let startDate;
+        
+        // Nếu là chuỗi ISO, sử dụng moment để parse chính xác
+        if (timeString.includes('T') || timeString.includes('-')) {
+          const m = moment(timeString);
+          if (m.isValid()) {
+            startDate = m.toDate();
+            console.log("📅 Parsed ISO date with moment:", startDate);
+          } else {
+            console.warn("⚠️ moment.isValid() returned false for:", timeString);
+            return;
+          }
+        } else {
+          startDate = new Date(timeString);
+          if (isNaN(startDate.getTime())) {
+            console.warn("⚠️ Invalid Date object created from:", timeString);
+            return;
+          }
+        }
+        
+        // ✅ DOUBLE CHECK VALIDITY BEFORE USING
+        if (isNaN(startDate.getTime())) {
+          console.error("❌ Invalid date after parsing:", startDate);
+          return;
+        }
+        
+        // ✅ ĐIỀU HƯỚNG ĐẾN NGÀY CỦA SỰ KIỆN
+        setCurrentDate(startDate);
+        setSelectedDate(startDate);
+        
+        // ✅ LƯU THỜI GIAN CẦN SCROLL VÀO REF (CẬP NHẬT LOGIC)
+        scrollTargetRef.current = {
+          timeString: timeString,
+          hour: startDate.getHours(),
+          minute: startDate.getMinutes()
+        };
+        
+        console.log("✅ Scroll target saved:", scrollTargetRef.current);
+      } catch (err) {
+        console.error("❌ Error parsing event start time:", err);
+      }
+    }
+  }), []);
 
   // ✅ HÀM XỬ LÝ CLICK CHUỘT PHẢI - THÊM VÀO ĐÂY
   const handleEventRightClick = (event, normalizedEvent, ev) => {
@@ -538,6 +620,84 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
   };
 
   const layoutedEvents = layoutEvents(dailyEvents);
+
+  // ✅ AUTO-SCROLL KHIBANGAY CÓ SCROLL TARGET
+  useEffect(() => {
+    if (!scrollTargetRef.current || !eventsRef.current) return;
+    
+    const scrollTarget = scrollTargetRef.current;
+    scrollTargetRef.current = null; // Reset để không scroll lại
+    
+    try {
+      let hour, minute;
+      
+      // ✅ HANDLE NEW OBJECT STRUCTURE
+      if (typeof scrollTarget === 'object' && scrollTarget.hour !== undefined) {
+        hour = scrollTarget.hour;
+        minute = scrollTarget.minute;
+        console.log("📊 Using stored scroll target:", scrollTarget);
+      } else {
+        // Fallback: parse time string
+        const timeString = typeof scrollTarget === 'string' ? scrollTarget : scrollTarget.toString();
+        
+        let startDate;
+        if (timeString.includes('T')) {
+          const m = moment(timeString);
+          if (m.isValid()) {
+            startDate = m.toDate();
+            console.log("📅 Parsed event time with moment:", startDate);
+          } else {
+            console.warn("⚠️ Invalid moment parse for:", timeString);
+            return;
+          }
+        } else {
+          startDate = new Date(timeString);
+        }
+        
+        if (isNaN(startDate.getTime())) {
+          console.warn("⚠️ Invalid date:", startDate);
+          return;
+        }
+        
+        hour = startDate.getHours();
+        minute = startDate.getMinutes();
+      }
+      
+      const scrollPosition = hour * 60 + minute;
+      
+      console.log("📊 Scroll calculation", {
+        hour,
+        minute,
+        scrollPosition
+      });
+      
+      setTimeout(() => {
+        if (eventsRef.current) {
+          // ✅ FIND .timeline ELEMENT (child of calendarMain, not parent)
+          const timelineElement = eventsRef.current.querySelector(`.${styles.timeline}`);
+          
+          if (timelineElement) {
+            console.log("📍 Found .timeline element", {
+              scrollHeight: timelineElement.scrollHeight,
+              clientHeight: timelineElement.clientHeight,
+              scrollPosition
+            });
+            
+            timelineElement.scrollTop = scrollPosition;
+            console.log("✅ Scrolled .timeline", {
+              scrollPosition,
+              newScrollTop: timelineElement.scrollTop,
+              match: Math.abs(timelineElement.scrollTop - scrollPosition) < 5
+            });
+          } else {
+            console.warn("⚠️ .timeline element not found!");
+          }
+        }
+      }, 300);
+    } catch (error) {
+      console.error("❌ Error in auto-scroll effect:", error);
+    }
+  }, [layoutedEvents, styles]);
 
   const changeDate = (offset) => {
     const newDate = new Date(selectedDate);
@@ -2314,4 +2474,6 @@ export default function CalendarView({ events, onEventClick, onDateSelect, onCre
       )}
     </div>
   );
-}
+});
+
+export default CalendarView;

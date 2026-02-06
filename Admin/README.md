@@ -101,6 +101,8 @@ serve -s build -l 3001
 cloudflared tunnel --url http://localhost:3001
 Frontend link (ví dụ: https://zen-frontend.trycloudflare.com) → Chia sẻ link này cho người dùng khác
 
+CLI deploy pro: npx wrangler pages deploy ./build --project-name zencity-smartcalendar
+
 cd project/backend
 Install dependencies:
 
