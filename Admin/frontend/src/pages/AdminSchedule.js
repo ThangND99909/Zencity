@@ -8,6 +8,7 @@ import styles from "./AdminSchedule.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
 import LoadingOverlay from '../components/LoadingOverlay';
 import PasscodeModal from "../components/PasscodeModal";
+//import logo from '../assets/logo.png';
 
 const CORRECT_PASSCODE = "1234"; // 🔐 Thay đổi passcode của bạn tại đây
 
@@ -574,7 +575,12 @@ export default function AdminSchedule() {
         type={loadingType}
         message={loadingMessage}
       />
-      <h1>📚 Admin Schedule Management</h1>
+      <div className={styles.headerWithLogo}>
+        <img src="/assets/logo.png" alt="Smart Calendar Logo" className={styles.logo} />
+        <h1 className={styles.mainTitle}>
+          Admin Schedule Management
+        </h1>
+      </div>
 
       {success && (
         <div className={`${styles.elegantNotify} ${styles.elegantSuccess}`}>
@@ -622,7 +628,7 @@ export default function AdminSchedule() {
         </div>
 
         <button
-          className={`${styles.btn} ${showCalendar ? styles.btnSecondary : styles.btnPrimary}`}
+          className={`${styles.btn} ${styles.btnToggleCalendar}`}
           onClick={() => {
             setEditingClass(null);
             setCreatingClass(null);
@@ -633,8 +639,8 @@ export default function AdminSchedule() {
         </button>
 
         
-        <button className={`${styles.btn} ${styles.btnInfo}`} onClick={handleRefresh}>
-          🔄 Refresh
+        <button className={`${styles.btn} ${styles.btnRefresh}`} onClick={handleRefresh}>
+          <span className={styles.refreshIcon}>🔄</span> Refresh
         </button>
         
         

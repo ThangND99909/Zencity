@@ -754,5 +754,12 @@
     "passcode": "gfd",
     "classname": "gdfg",
     "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "tspq1dbn7odhgh1evpibp9fjv8": {
+    "zoom_link": "https://test.com",
+    "meeting_id": "888",
+    "passcode": "999",
+    "classname": "Room S",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
   }
 }
