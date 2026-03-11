@@ -580,6 +580,21 @@ export default function AdminSchedule() {
         <h1 className={styles.mainTitle}>
           Admin Schedule Management
         </h1>
+        <button
+          className={`${styles.btn} ${styles.btnToggleCalendar}`}
+          onClick={() => {
+            setEditingClass(null);
+            setCreatingClass(null);
+            setShowCalendar(!showCalendar);
+          }}
+        >
+          {showCalendar ? "📅 Hide Calendar" : "📅 Show Calendar"}
+        </button>
+
+        
+        <button className={`${styles.btn} ${styles.btnRefresh}`} onClick={handleRefresh}>
+          <span className={styles.refreshIcon}>🔄</span> Refresh
+        </button>
       </div>
 
       {success && (
@@ -608,8 +623,9 @@ export default function AdminSchedule() {
         <div className={styles.loading}>🔄 Loading recurrence data...</div>
       )}
 
+      {/*
       <div className={styles.controlBar}>
-        {/* ✅ THÊM CALENDAR FILTER */}
+        {/* ✅ THÊM CALENDAR FILTER 
         <div className={styles.calendarFilter}>
           <label>📅 Calendar: </label>
           <select 
@@ -650,10 +666,26 @@ export default function AdminSchedule() {
             ❌ Cancel {isEditing ? "Edit" : "Create"}
           </button>
         )}
-      </div>
+      </div>*/}
 
       {/* ✅ THÊM CALENDAR INFO BANNER */}
-      <div className={styles.calendarInfo}>
+      {/*<div className={styles.calendarInfo}>
+        <button
+          className={`${styles.btn} ${styles.btnToggleCalendar}`}
+          onClick={() => {
+            setEditingClass(null);
+            setCreatingClass(null);
+            setShowCalendar(!showCalendar);
+          }}
+        >
+          {showCalendar ? "📅 Hide Calendar" : "📅 Show Calendar"}
+        </button>
+
+        
+        <button className={`${styles.btn} ${styles.btnRefresh}`} onClick={handleRefresh}>
+          <span className={styles.refreshIcon}>🔄</span> Refresh
+        </button>
+        
         <div className={styles.calendarBadgeOdd}>
           📘 Calendar Lẻ: {classes.filter(e => e._calendar_source === 'odd').length} events
         </div>
@@ -663,7 +695,7 @@ export default function AdminSchedule() {
         <div className={styles.calendarNote}>
           ℹ️ Events sẽ tự động được phân vào calendar dựa trên giờ bắt đầu (chẵn/lẻ)
         </div>
-      </div>
+      </div>*/}
 
       <div className={styles.mainContent}>
         {showCalendar ? (

@@ -21,8 +21,8 @@ export const parseZoomInfo = (rawDescription = "") => {
   const passcodeMatch = description.match(/Passcode[:：]?\s*([A-Za-z0-9]+)/i);
   const passcode = passcodeMatch ? passcodeMatch[1].trim() : "";
 
-  // 🧩 5️⃣ Tìm Program (nếu có)
-  const programMatch = description.match(/Program[:：]?\s*([A-Za-z0-9]+)/i);
+  // 🧩 5️⃣ Tìm Program (nếu có) — hỗ trợ tiếng Việt có dấu và dấu gạch dưới
+  const programMatch = description.match(/Program[:：]?\s*(.*?)(?:\n|$)/i);
   const program = programMatch ? programMatch[1].trim() : "";
 
   // 🧩 6️⃣ Tìm Teacher

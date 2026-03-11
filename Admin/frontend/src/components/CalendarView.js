@@ -1,5 +1,5 @@
 // frontend/src/components/CalendarView.js
-import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
 import styles from "./CalendarView.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
 import { getEvent } from "../services/api";
@@ -23,6 +23,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
   const popupRef = useRef(null);
   const eventsRef = useRef(null);
   const scrollTargetRef = useRef(null); // ✅ THÊM REF LƯU TRỮ THỜI GIAN CẦN SCROLL
+  const searchBarRef = useRef(null); // ✅ REF CHO Ô TÌM KIẾM
   const today = new Date();
 
   // ✅ Thêm các state mới cho context menu và delete modal
@@ -36,6 +37,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [eventToDelete, setEventToDelete] = useState(null);
   const [showEditRecurringModal, setShowEditRecurringModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [editRecurringOptions, setEditRecurringOptions] = useState({
     event: null,
     originalEvent: null,
@@ -543,6 +546,30 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     fetchTimezones();
   }, []);
 
+  // ✅ GỢI Ý TÌM KIẾM — tính từ tất cả events
+  const searchSuggestions = useMemo(() => {
+    if (!searchQuery.trim()) return { names: [], teachers: [], programs: [] };
+    const q = searchQuery.trim().toLowerCase();
+    const names = new Set();
+    const teachers = new Set();
+    const programs = new Set();
+    events.forEach(event => {
+      const rawDesc = event.description || "";
+      const parsed = parseZoomInfo(rawDesc);
+      const className = event.class_name || event.classname || parsed.classname || event.summary || event.name || "";
+      const teacher = event.teacher || parsed.teacher || "";
+      const program = event.program || parsed.program || "";
+      if (className && className.toLowerCase().includes(q)) names.add(className);
+      if (teacher && teacher.toLowerCase().includes(q)) teachers.add(teacher);
+      if (program && program.toLowerCase().includes(q)) programs.add(program);
+    });
+    return {
+      names: [...names].slice(0, 6),
+      teachers: [...teachers].slice(0, 6),
+      programs: [...programs].slice(0, 6)
+    };
+  }, [events, searchQuery]);
+
   // ✅ FILTER EVENTS DỰA TRÊN CALENDAR FILTER
   const filteredEvents = events.filter(event => {
     // 1. Lọc theo calendarFilter (odd/even/both)
@@ -573,6 +600,19 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     
     // Chỉ hiển thị nếu calendar được checked
     return matchingCalendar.checked;
+  }).filter(event => {
+    // 3. Lọc theo từ khóa tìm kiếm (tên lớp, giáo viên, chương trình)
+    if (!searchQuery.trim()) return true;
+    // Tách query thành nhiều từ — từng từ phải khớp ít nhất 1 trong 3 trường
+    const words = searchQuery.trim().toLowerCase().split(/\s+/);
+    // Parse từ description giống ClassTable.js (dùng parseZoomInfo)
+    const rawDesc = event.description || "";
+    const parsed = parseZoomInfo(rawDesc);
+    const className = (event.class_name || event.classname || parsed.classname || event.summary || event.name || "").toLowerCase();
+    const teacher = (event.teacher || parsed.teacher || "").toLowerCase();
+    const program = (event.program || parsed.program || "").toLowerCase();
+    // AND logic: mỗi từ phải khớp ít nhất 1 trường
+    return words.every(w => className.includes(w) || teacher.includes(w) || program.includes(w));
   });
 
   const dailyEvents = filteredEvents.filter((e) => {
@@ -704,6 +744,16 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     newDate.setDate(selectedDate.getDate() + offset);
     setSelectedDate(newDate);
   };
+
+  // ✅ Sync mini calendar month theo selectedDate (bao gồm cả nút Hôm nay, mini click, changeDate)
+  useEffect(() => {
+    if (
+      selectedDate.getMonth() !== currentDate.getMonth() ||
+      selectedDate.getFullYear() !== currentDate.getFullYear()
+    ) {
+      setCurrentDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+    }
+  }, [selectedDate]);
 
   const formatHeaderDate = (date) =>
     date.toLocaleDateString("vi-VN", { day: "numeric", month: "long", year: "numeric" });
@@ -1371,6 +1421,17 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showPopup]);
 
+  // ✅ ĐÓNG DROPDOWN GỢI Ý KHI CLICK RA NGOÀI
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchBarRef.current && !searchBarRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   useEffect(() => {
     if (showPopup) {
       console.log("📝 POPUP STATE:", {
@@ -1419,6 +1480,63 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
           <button onClick={() => changeDate(1)} className={styles.navBtn}>›</button>
           <button onClick={() => setSelectedDate(today)} className={styles.todayBtn}>Hôm nay</button>
           <div className={styles.headerDate}>{formatHeaderDate(selectedDate)}</div>
+        </div>
+        <div className={styles.searchBar} ref={searchBarRef}>
+          <input
+            type="text"
+            placeholder="🔍 Tìm theo tên lớp, giáo viên, chương trình..."
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setShowSuggestions(true); }}
+            onFocus={() => setShowSuggestions(true)}
+            className={styles.searchInput}
+          />
+          {searchQuery && (
+            <button
+              className={styles.searchClearBtn}
+              onClick={() => { setSearchQuery(""); setShowSuggestions(false); }}
+              title="Xóa tìm kiếm"
+            >
+              ✕
+            </button>
+          )}
+          {showSuggestions && searchQuery.trim() &&
+            (searchSuggestions.names.length + searchSuggestions.teachers.length + searchSuggestions.programs.length) > 0 && (
+            <div className={styles.searchDropdown}>
+              {searchSuggestions.names.length > 0 && (
+                <>
+                  <div className={styles.searchDropdownSection}>📚 Tên lớp</div>
+                  {searchSuggestions.names.map((name, i) => (
+                    <div key={i} className={styles.searchDropdownItem}
+                      onMouseDown={() => { setSearchQuery(name); setShowSuggestions(false); }}>
+                      {name}
+                    </div>
+                  ))}
+                </>
+              )}
+              {searchSuggestions.teachers.length > 0 && (
+                <>
+                  <div className={styles.searchDropdownSection}>👤 Giáo viên</div>
+                  {searchSuggestions.teachers.map((t, i) => (
+                    <div key={i} className={styles.searchDropdownItem}
+                      onMouseDown={() => { setSearchQuery(t); setShowSuggestions(false); }}>
+                      {t}
+                    </div>
+                  ))}
+                </>
+              )}
+              {searchSuggestions.programs.length > 0 && (
+                <>
+                  <div className={styles.searchDropdownSection}>🎯 Chương trình</div>
+                  {searchSuggestions.programs.map((p, i) => (
+                    <div key={i} className={styles.searchDropdownItem}
+                      onMouseDown={() => { setSearchQuery(p); setShowSuggestions(false); }}>
+                      {p}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -133,6 +133,11 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     setCurrentPage(1); // Reset về trang 1 khi filter
   };
 
+  const handleClearFilter = (name) => {
+    setFilters({ ...filters, [name]: "" });
+    setCurrentPage(1);
+  };
+
   // Trích xuất thông tin từ description và các field trực tiếp
   const extractClassInfo = (cls) => {
     const rawDescription = cls.description || "";
@@ -417,30 +422,45 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
         </div>
 
         <div className={styles.filters}>
-          <input
-            type="text"
-            name="name"
-            placeholder="Tìm theo tên lớp"
-            value={filters.name}
-            onChange={handleFilterChange}
-            className={styles.filterInput}
-          />
-          <input
-            type="text"
-            name="program"
-            placeholder="Tìm theo môn học"
-            value={filters.program}
-            onChange={handleFilterChange}
-            className={styles.filterInput}
-          />
-          <input
-            type="text"
-            name="teacher"
-            placeholder="Tìm theo giáo viên"
-            value={filters.teacher}
-            onChange={handleFilterChange}
-            className={styles.filterInput}
-          />
+          <div className={styles.filterInputWrapper}>
+            <input
+              type="text"
+              name="name"
+              placeholder="Tìm theo tên lớp"
+              value={filters.name}
+              onChange={handleFilterChange}
+              className={styles.filterInput}
+            />
+            {filters.name && (
+              <button className={styles.filterClearBtn} onClick={() => handleClearFilter("name")}>✕</button>
+            )}
+          </div>
+          <div className={styles.filterInputWrapper}>
+            <input
+              type="text"
+              name="program"
+              placeholder="Tìm theo chương trình"
+              value={filters.program}
+              onChange={handleFilterChange}
+              className={styles.filterInput}
+            />
+            {filters.program && (
+              <button className={styles.filterClearBtn} onClick={() => handleClearFilter("program")}>✕</button>
+            )}
+          </div>
+          <div className={styles.filterInputWrapper}>
+            <input
+              type="text"
+              name="teacher"
+              placeholder="Tìm theo giáo viên"
+              value={filters.teacher}
+              onChange={handleFilterChange}
+              className={styles.filterInput}
+            />
+            {filters.teacher && (
+              <button className={styles.filterClearBtn} onClick={() => handleClearFilter("teacher")}>✕</button>
+            )}
+          </div>
           <select
             name="calendar"
             value={filters.calendar}
@@ -448,8 +468,8 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
             className={styles.filterSelect}
           >
             <option value="all">Tất cả Calendar</option>
-            <option value="odd">📘 Calendar Lẻ</option>
-            <option value="even">📗 Calendar Chẵn</option>
+            <option value="odd">📘 Calendar Lẻ (Giờ lẻ: 1,3,5...)</option>
+            <option value="even">📗 Calendar Chẵn (Giờ chẵn: 2,4,6...)</option>
           </select>
         </div>
       </div>

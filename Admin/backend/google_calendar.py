@@ -32,8 +32,8 @@ except Exception as e:
     print(f"⚠️ Warm-up failed: {e}")
 
 # ========== ĐỊNH NGHĨA 2 CALENDAR ==========
-CALENDAR_ODD = '830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com'
-CALENDAR_EVEN = '2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com'
+CALENDAR_ODD = 'thanhhuyphan39@gmail.com'
+CALENDAR_EVEN = '046ba2f76ddf1ef3aa3b775dcf2d76c8648c5935891144f4930876167a985af4@group.calendar.google.com'
 
 CALENDARS = {
     'odd': CALENDAR_ODD,

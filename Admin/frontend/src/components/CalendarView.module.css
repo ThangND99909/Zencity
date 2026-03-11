@@ -13,7 +13,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  
+  position: relative;
   padding: 8px 20px;
   border-bottom: 1px solid #e0e0e0;
   background-color: #fff;
@@ -895,3 +895,106 @@
   font-style: italic;
 }
 
+/* ============ SEARCH BAR ============ */
+/* position: absolute right để search bar nằm phải mà không ảnh hưởng căn giữa leftHeader */
+.searchBar {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0;
+  z-index: 200;
+}
+
+.searchInput {
+  height: 34px;
+  width: 300px;
+  padding: 0 36px 0 14px;
+  border: 1px solid #dadce0;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #3c4043;
+  background: #f1f3f4;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.searchInput:focus {
+  border-color: #1a73e8;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(26, 115, 232, 0.18);
+  width: 360px;
+}
+
+.searchInput::placeholder {
+  color: #80868b;
+}
+
+.searchClearBtn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  font-size: 14px;
+  color: #5f6368;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.searchClearBtn:hover {
+  background: #e8eaed;
+  color: #202124;
+}
+
+.searchDropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 340px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.searchDropdownSection {
+  padding: 8px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #80868b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.searchDropdownItem {
+  padding: 9px 16px;
+  font-size: 13px;
+  color: #3c4043;
+  cursor: pointer;
+  border-bottom: 1px solid #f5f5f5;
+  transition: background 0.15s;
+}
+
+.searchDropdownItem:hover {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+
+.searchDropdownItem:last-child {
+  border-bottom: none;
+}

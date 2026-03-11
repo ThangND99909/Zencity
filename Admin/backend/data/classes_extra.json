@@ -761,5 +761,19 @@
     "passcode": "999",
     "classname": "Room S",
     "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "ustvbldal0lba2fptlfjscli7o": {
+    "zoom_link": "test.com",
+    "meeting_id": "123",
+    "passcode": "232",
+    "classname": "Room A1",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
+  },
+  "0cah6rgr7rijn5ku4thtt7aabk": {
+    "zoom_link": "test.com",
+    "meeting_id": "543",
+    "passcode": "654",
+    "classname": "Room A2",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
   }
 }
