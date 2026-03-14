@@ -119,6 +119,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [selectedRecurringEvents, setSelectedRecurringEvents] = useState(null);
+  const [weekOffset, setWeekOffset] = useState(0);
 
   // --- Bộ lọc ---
   const [filters, setFilters] = useState({
@@ -176,6 +177,26 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     };
   };
 
+  // ================= TUẦN HIỆN TẠI =================
+  const weekBounds = useMemo(() => {
+    const now = new Date();
+    const day = now.getDay(); // 0=CN, 1=T2...
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday + weekOffset * 7);
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    return { start: monday, end: sunday };
+  }, [weekOffset]);
+
+  const weekLabel = useMemo(() => {
+    const fmt = (d) =>
+      d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return `${fmt(weekBounds.start)} – ${fmt(weekBounds.end)}`;
+  }, [weekBounds]);
+
   // ================= NHÓM CÁC SỰ KIỆN LẶP LẠI =================
   const groupedClasses = useMemo(() => {
     // Nhóm các sự kiện theo recurringEventId
@@ -184,7 +205,11 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     
     classes.forEach(cls => {
       if (cls.status === "cancelled") return;
-      
+
+      // Lọc theo tuần hiện tại
+      const clsStart = new Date(cls.start?.dateTime || cls.start);
+      if (clsStart < weekBounds.start || clsStart > weekBounds.end) return;
+
       if (cls.recurringEventId) {
         if (!recurringGroups.has(cls.recurringEventId)) {
           recurringGroups.set(cls.recurringEventId, []);
@@ -218,7 +243,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     
     // Kết hợp non-recurring và recurring representatives
     return [...nonRecurring, ...recurringRepresentatives];
-  }, [classes]);
+  }, [classes, weekBounds]);
 
   // ================= Lọc lớp =================
   const filteredClasses = useMemo(() => {
@@ -394,6 +419,28 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
 
   return (
     <div className={styles.tableContainer}>
+      {/* ================= WEEK NAVIGATION ================= */}
+      <div className={styles.weekNavBar}>
+        <button
+          className={styles.weekNavBtn}
+          onClick={() => { setWeekOffset(o => o - 1); setCurrentPage(1); }}
+        >
+          ← Tuần trước
+        </button>
+        <button
+          className={`${styles.weekNavBtn} ${weekOffset === 0 ? styles.weekTodayActive : ""}`}
+          onClick={() => { setWeekOffset(0); setCurrentPage(1); }}
+        >
+          Tuần này
+        </button>
+        <span className={styles.weekRange}>📅 {weekLabel}</span>
+        <button
+          className={styles.weekNavBtn}
+          onClick={() => { setWeekOffset(o => o + 1); setCurrentPage(1); }}
+        >
+          Tuần sau →
+        </button>
+      </div>
       {/* ================= STATS & FILTERS ================= */}
       <div className={styles.headerSection}>
         <div className={styles.stats}>
@@ -694,8 +741,8 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
       {/* ================= FOOTER & EXPORT ================= */}
       <div className={styles.footer}>
         <div className={styles.footerStats}>
-          Showing <strong>{filteredClasses.length}</strong> groups 
-          (total <strong>{stats.totalInstances}</strong> instances)
+          Tuần: <strong>{weekLabel}</strong> — <strong>{filteredClasses.length}</strong> nhóm
+          (tổng <strong>{stats.totalInstances}</strong> buổi)
           {filters.calendar !== 'all' && (
             <span className={styles.filterNote}>
               • Filtered by: {filters.calendar === 'odd' ? '📘 Calendar Lẻ' : '📗 Calendar Chẵn'}

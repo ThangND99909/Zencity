@@ -998,3 +998,306 @@
 .searchDropdownItem:last-child {
   border-bottom: none;
 }
+
+/* ============================================================ */
+/* ==================== VIEW MODE SELECTOR ==================== */
+/* ============================================================ */
+.viewSelector {
+  display: flex;
+  background: #f1f3f4;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #dadce0;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.viewBtn {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: #3c4043;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.viewBtn:hover {
+  background: #e8eaed;
+}
+
+.viewBtnActive {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+/* ============================================================ */
+/* ======================== WEEK VIEW ========================= */
+/* ============================================================ */
+.weekView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.weekViewHeader {
+  display: flex;
+  border-bottom: 2px solid #e0e0e0;
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex-shrink: 0;
+}
+
+.weekTimeGutter {
+  width: 70px;
+  min-width: 70px;
+  border-right: 1px solid #e0e0e0;
+}
+
+.weekDayHeader {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  border-right: 1px solid #f1f3f4;
+  cursor: pointer;
+  transition: background 0.15s;
+  min-width: 0;
+}
+
+.weekDayHeader:hover {
+  background: #f8f9fa;
+}
+
+.weekDayHeader:last-child {
+  border-right: none;
+}
+
+.weekDayName {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #70757a;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.weekDayNum {
+  font-size: 20px;
+  font-weight: 400;
+  color: #3c4043;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin-top: 4px;
+  transition: all 0.15s;
+}
+
+.weekDayToday .weekDayName {
+  color: #1a73e8;
+}
+
+.todayCircle {
+  background: #1a73e8 !important;
+  color: #fff !important;
+}
+
+.weekBody {
+  display: flex;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.weekTimeColumn {
+  width: 70px;
+  min-width: 70px;
+  border-right: 1px solid #e0e0e0;
+  font-size: 11px;
+  color: #70757a;
+  flex-shrink: 0;
+}
+
+.weekTimeLabel {
+  height: 60px;
+  padding-right: 6px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex: 0 0 60px;
+  box-sizing: border-box;
+}
+
+.weekDayColumn {
+  flex: 1;
+  position: relative;
+  border-right: 1px solid #f1f3f4;
+  height: 1440px;
+  cursor: cell;
+  min-width: 0;
+}
+
+.weekDayColumn:last-child {
+  border-right: none;
+}
+
+.weekDayColumnToday {
+  background: rgba(26, 115, 232, 0.02);
+}
+
+.weekEventItem {
+  position: absolute;
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 11px;
+  cursor: pointer;
+  overflow: hidden;
+  box-sizing: border-box;
+  z-index: 1;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+
+.weekEventItem:hover {
+  opacity: 0.9;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================================ */
+/* ======================== MONTH VIEW ======================== */
+/* ============================================================ */
+.monthView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0 12px 12px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.monthWeekdayHeader {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.monthWeekdayLabel {
+  text-align: center;
+  padding: 8px 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #70757a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.monthGrid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: minmax(80px, 1fr);
+  overflow-y: auto;
+  border-left: 1px solid #e0e0e0;
+  border-top: 1px solid #e0e0e0;
+}
+
+.monthCell {
+  border-right: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 4px 6px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.1s;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.monthCell:hover {
+  background: #f8f9fa;
+}
+
+.monthOtherMonth {
+  background: #fafafa;
+}
+
+.monthOtherMonth .monthDayNum {
+  color: #bbb;
+}
+
+.monthToday {
+  background: rgba(26, 115, 232, 0.04);
+}
+
+.monthDayNum {
+  font-size: 12px;
+  color: #3c4043;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin-bottom: 2px;
+  font-weight: 400;
+}
+
+.monthTodayNum {
+  background: #1a73e8;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.monthEventChip {
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  display: block;
+  transition: opacity 0.1s;
+}
+
+.monthEventChip:hover {
+  opacity: 0.8;
+}
+
+.chipOdd {
+  background: rgba(26, 115, 232, 0.15);
+  color: #1a73e8;
+  border-left: 3px solid #1a73e8;
+}
+
+.chipEven {
+  background: rgba(52, 168, 83, 0.15);
+  color: #34a853;
+  border-left: 3px solid #34a853;
+}
+
+.monthMoreEvents {
+  font-size: 11px;
+  color: #5f6368;
+  padding: 2px 5px;
+  cursor: pointer;
+  border-radius: 3px;
+  display: block;
+}
+
+.monthMoreEvents:hover {
+  background: #e8eaed;
+  color: #3c4043;
+}

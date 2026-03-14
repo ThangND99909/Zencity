@@ -741,7 +741,13 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
 
   const changeDate = (offset) => {
     const newDate = new Date(selectedDate);
-    newDate.setDate(selectedDate.getDate() + offset);
+    if (viewMode === "week") {
+      newDate.setDate(selectedDate.getDate() + offset * 7);
+    } else if (viewMode === "month") {
+      newDate.setMonth(selectedDate.getMonth() + offset);
+    } else {
+      newDate.setDate(selectedDate.getDate() + offset);
+    }
     setSelectedDate(newDate);
   };
 
@@ -757,6 +763,89 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
 
   const formatHeaderDate = (date) =>
     date.toLocaleDateString("vi-VN", { day: "numeric", month: "long", year: "numeric" });
+
+  // ✅ VIEW MODE HELPERS
+  const getWeekDays = (date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + diff);
+    monday.setHours(0, 0, 0, 0);
+    return Array.from({ length: 7 }, (_, i) => {
+      const wd = new Date(monday);
+      wd.setDate(monday.getDate() + i);
+      return wd;
+    });
+  };
+
+  const getMonthDays = (date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    let startDay = firstDay.getDay();
+    startDay = startDay === 0 ? 6 : startDay - 1; // Mon=0, Sun=6
+    const days = [];
+    const prevMonthLastDay = new Date(year, month, 0).getDate();
+    for (let i = startDay - 1; i >= 0; i--) {
+      days.push({ date: new Date(year, month - 1, prevMonthLastDay - i), isCurrent: false });
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({ date: new Date(year, month, i), isCurrent: true });
+    }
+    const remaining = (7 - (days.length % 7)) % 7;
+    for (let i = 1; i <= remaining; i++) {
+      days.push({ date: new Date(year, month + 1, i), isCurrent: false });
+    }
+    return days;
+  };
+
+  const layoutEventsForDay = (evts, day) => {
+    const dayStart = new Date(day);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(day);
+    dayEnd.setHours(23, 59, 59, 999);
+    const sorted = evts
+      .map((e) => {
+        const start = new Date(e.start?.dateTime || e.start);
+        const end = new Date(e.end?.dateTime || e.end);
+        const displayStart = start < dayStart ? dayStart : start;
+        const displayEnd = end > dayEnd ? dayEnd : end;
+        return {
+          ...e,
+          startMins: displayStart.getHours() * 60 + displayStart.getMinutes(),
+          endMins: displayEnd.getHours() * 60 + displayEnd.getMinutes(),
+        };
+      })
+      .sort((a, b) => a.startMins - b.startMins);
+    const positioned = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const event = sorted[i];
+      const overlapGroup = sorted.filter(
+        (e) => e.startMins < event.endMins && e.endMins > event.startMins
+      );
+      const idx = overlapGroup.findIndex((e) => e === event);
+      const width = 100 / overlapGroup.length;
+      const left = idx * width;
+      positioned.push({ ...event, width: `${width}%`, left: `${left}%` });
+    }
+    return positioned;
+  };
+
+  const formatWeekHeader = (date) => {
+    const days = getWeekDays(date);
+    const start = days[0];
+    const end = days[6];
+    if (start.getMonth() === end.getMonth()) {
+      return `${start.getDate()} – ${end.getDate()} Tháng ${start.getMonth() + 1}, ${start.getFullYear()}`;
+    }
+    return `${start.getDate()} Tháng ${start.getMonth() + 1} – ${end.getDate()} Tháng ${end.getMonth() + 1}, ${end.getFullYear()}`;
+  };
+
+  const formatMonthHeader = (date) =>
+    date.toLocaleDateString("vi-VN", { month: "long", year: "numeric" });
 
   const getMiniCalendarDays = () => {
     const year = currentDate.getFullYear();
@@ -950,6 +1039,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
 
 
   const [masterEventsCache, setMasterEventsCache] = useState({});
+  const [viewMode, setViewMode] = useState("week"); // "day" | "week" | "month"
 
   const parseRecurrenceFromEvent = async (cls) => {
     console.log("🔍 [RECURRENCE DEBUG] Checking event:", {
@@ -1479,7 +1569,11 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
           <button onClick={() => changeDate(-1)} className={styles.navBtn}>‹</button>
           <button onClick={() => changeDate(1)} className={styles.navBtn}>›</button>
           <button onClick={() => setSelectedDate(today)} className={styles.todayBtn}>Hôm nay</button>
-          <div className={styles.headerDate}>{formatHeaderDate(selectedDate)}</div>
+          <div className={styles.headerDate}>
+            {viewMode === "day" && formatHeaderDate(selectedDate)}
+            {viewMode === "week" && formatWeekHeader(selectedDate)}
+            {viewMode === "month" && formatMonthHeader(selectedDate)}
+          </div>
         </div>
         <div className={styles.searchBar} ref={searchBarRef}>
           <input
@@ -1537,6 +1631,27 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
               )}
             </div>
           )}
+        </div>
+        {/* ✅ View Mode Selector */}
+        <div className={styles.viewSelector}>
+          <button
+            className={`${styles.viewBtn} ${viewMode === "day" ? styles.viewBtnActive : ""}`}
+            onClick={() => setViewMode("day")}
+          >
+            Ngày
+          </button>
+          <button
+            className={`${styles.viewBtn} ${viewMode === "week" ? styles.viewBtnActive : ""}`}
+            onClick={() => setViewMode("week")}
+          >
+            Tuần
+          </button>
+          <button
+            className={`${styles.viewBtn} ${viewMode === "month" ? styles.viewBtnActive : ""}`}
+            onClick={() => setViewMode("month")}
+          >
+            Tháng
+          </button>
         </div>
       </div>
 
@@ -1621,6 +1736,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
         </div>
 
         <div className={styles.calendarMain} ref={eventsRef}>
+          {/* ✅ DAY VIEW */}
+          {viewMode === "day" && (
           <div
             className={styles.timeline}
             onClick={(e) => {
@@ -1723,6 +1840,170 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
               )}
             </div>
           </div>
+          )} {/* end day view */}
+
+          {/* ✅ WEEK VIEW */}
+          {viewMode === "week" && (
+            <div className={styles.weekView}>
+              {/* Week day header row */}
+              <div className={styles.weekViewHeader}>
+                <div className={styles.weekTimeGutter}></div>
+                {getWeekDays(selectedDate).map((day, idx) => {
+                  const isToday = day.toDateString() === today.toDateString();
+                  return (
+                    <div
+                      key={idx}
+                      className={`${styles.weekDayHeader} ${isToday ? styles.weekDayToday : ""}`}
+                      onClick={() => { setSelectedDate(day); setViewMode("day"); }}
+                    >
+                      <div className={styles.weekDayName}>
+                        {day.toLocaleDateString("vi-VN", { weekday: "short" })}
+                      </div>
+                      <div className={`${styles.weekDayNum} ${isToday ? styles.todayCircle : ""}`}>
+                        {day.getDate()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Scrollable week body */}
+              <div className={styles.weekBody}>
+                <div className={styles.weekTimeColumn}>
+                  {timeSlots.map((t) => (
+                    <div key={t} className={styles.weekTimeLabel}>{t}</div>
+                  ))}
+                </div>
+                {getWeekDays(selectedDate).map((day, dayIdx) => {
+                  const dayEvts = filteredEvents.filter((e) => {
+                    const s = new Date(e.start?.dateTime || e.start);
+                    const en = new Date(e.end?.dateTime || e.end);
+                    const ds = new Date(day); ds.setHours(0, 0, 0, 0);
+                    const de = new Date(day); de.setHours(23, 59, 59, 999);
+                    return en > ds && s < de;
+                  });
+                  const layoutedDay = layoutEventsForDay(dayEvts, day);
+                  const isDayToday = day.toDateString() === today.toDateString();
+                  return (
+                    <div
+                      key={dayIdx}
+                      className={`${styles.weekDayColumn} ${isDayToday ? styles.weekDayColumnToday : ""}`}
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const clickY = e.clientY - rect.top;
+                        const hour = Math.max(0, Math.min(23, Math.floor(clickY / 60)));
+                        const newStart = new Date(day);
+                        newStart.setHours(hour, 0, 0, 0);
+                        const newEnd = new Date(newStart);
+                        newEnd.setHours(hour + 1, 0, 0, 0);
+                        openPopup(newStart, newEnd);
+                      }}
+                    >
+                      <div className={styles.hourLines}>
+                        {timeSlots.map((_, i) => (
+                          <div key={i} className={styles.hourLine}></div>
+                        ))}
+                      </div>
+                      {layoutedDay.map((ev, i) => {
+                        const ne = normalizeEvent(ev);
+                        const top = ev.startMins;
+                        const height = Math.max(ev.endMins - ev.startMins, 20);
+                        const eventClass = ne.calendar_source === "odd"
+                          ? styles.eventItemOdd
+                          : styles.eventItemEven;
+                        return (
+                          <div
+                            key={i}
+                            className={`${styles.weekEventItem} ${eventClass}`}
+                            style={{
+                              top: `${top}px`,
+                              height: `${height}px`,
+                              width: ev.width,
+                              left: ev.left,
+                              position: "absolute",
+                              borderLeft: `4px solid ${ne.calendar_color}`,
+                            }}
+                            onClick={(evv) => {
+                              evv.stopPropagation();
+                              setSelectedEvent(ne);
+                              setShowDetailPopup(true);
+                            }}
+                            onContextMenu={(evv) => handleEventRightClick(ev, ne, evv)}
+                          >
+                            <div className={styles.eventName}>{ne.name}</div>
+                            <div className={styles.eventTime}>
+                              {moment(ne.start?.dateTime || ne.start)
+                                .tz(ne.timezone || "Asia/Ho_Chi_Minh")
+                                .format("HH:mm")}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {timePosition !== null && isDayToday && (
+                        <div className={styles.currentTimeLine} style={{ top: `${timePosition}px` }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ✅ MONTH VIEW */}
+          {viewMode === "month" && (
+            <div className={styles.monthView}>
+              <div className={styles.monthWeekdayHeader}>
+                {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((d) => (
+                  <div key={d} className={styles.monthWeekdayLabel}>{d}</div>
+                ))}
+              </div>
+              <div className={styles.monthGrid}>
+                {getMonthDays(selectedDate).map((d, i) => {
+                  const isToday = d.date.toDateString() === today.toDateString();
+                  const dayEvts = filteredEvents.filter((e) => {
+                    const s = new Date(e.start?.dateTime || e.start);
+                    const ds = new Date(d.date); ds.setHours(0, 0, 0, 0);
+                    const de = new Date(d.date); de.setHours(23, 59, 59, 999);
+                    return s >= ds && s <= de;
+                  });
+                  const maxVisible = 3;
+                  const visibleEvts = dayEvts.slice(0, maxVisible);
+                  const hiddenCount = dayEvts.length - maxVisible;
+                  return (
+                    <div
+                      key={i}
+                      className={`${styles.monthCell} ${!d.isCurrent ? styles.monthOtherMonth : ""} ${isToday ? styles.monthToday : ""}`}
+                      onClick={() => { setSelectedDate(d.date); setViewMode("day"); }}
+                    >
+                      <div className={`${styles.monthDayNum} ${isToday ? styles.monthTodayNum : ""}`}>
+                        {d.date.getDate()}
+                      </div>
+                      {visibleEvts.map((ev, j) => {
+                        const ne = normalizeEvent(ev);
+                        return (
+                          <div
+                            key={j}
+                            className={`${styles.monthEventChip} ${ne.calendar_source === "odd" ? styles.chipOdd : styles.chipEven}`}
+                            onClick={(e) => { e.stopPropagation(); setSelectedEvent(ne); setShowDetailPopup(true); }}
+                            title={ne.name}
+                          >
+                            {ne.name}
+                          </div>
+                        );
+                      })}
+                      {hiddenCount > 0 && (
+                        <div
+                          className={styles.monthMoreEvents}
+                          onClick={(e) => { e.stopPropagation(); setSelectedDate(d.date); setViewMode("day"); }}
+                        >
+                          +{hiddenCount} thêm
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

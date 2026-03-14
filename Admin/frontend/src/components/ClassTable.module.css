@@ -21,6 +21,52 @@
   border-radius: 12px 12px 0 0;
 }
 
+/* ============ WEEK NAVIGATION BAR ============ */
+.weekNavBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: white;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  flex-wrap: wrap;
+}
+
+.weekNavBtn {
+  padding: 7px 14px;
+  border: 1.5px solid #dadce0;
+  border-radius: 6px;
+  background: white;
+  color: #3c4043;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.weekNavBtn:hover {
+  background: #f1f3f4;
+  border-color: #bdbdbd;
+}
+
+.weekTodayActive {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+.weekRange {
+  flex: 1;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #202124;
+  padding: 0 8px;
+}
+
 /* ============ HEADER SECTION ============ */
 .headerSection {
   display: flex;

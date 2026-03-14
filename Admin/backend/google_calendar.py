@@ -33,7 +33,7 @@ except Exception as e:
 
 # ========== ĐỊNH NGHĨA 2 CALENDAR ==========
 CALENDAR_ODD = 'thanhhuyphan39@gmail.com'
-CALENDAR_EVEN = '046ba2f76ddf1ef3aa3b775dcf2d76c8648c5935891144f4930876167a985af4@group.calendar.google.com'
+CALENDAR_EVEN = 'cbb3ef13c933e582c8af5eb8d198540200e7e26bf367639a062e1e16b9d4b115@group.calendar.google.com'
 
 CALENDARS = {
     'odd': CALENDAR_ODD,

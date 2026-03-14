@@ -746,12 +746,12 @@ export default function AdminSchedule() {
         )}
       </div>
 
-      <div className={styles.footer}>
+      {/*<div className={styles.footer}>
         📊 Total: {classes.length} classes • 
         Calendar: {calendarFilter === 'both' ? 'Both' : calendarFilter === 'odd' ? 'ODD' : 'EVEN'} • 
         {showForm && (isEditing ? "Editing Mode" : "Creating Mode")} • 
         Last updated: {new Date().toLocaleTimeString()}
-      </div>
+      </div>*/}
         </>
       )}
     </div>
