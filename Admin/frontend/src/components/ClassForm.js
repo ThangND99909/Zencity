@@ -1,6 +1,8 @@
 // frontend/src/components/ClassForm.js
 import React, { useState, useEffect } from "react";
 import styles from "./ClassForm.module.css";
+import ProgramManageModal from "./ProgramManageModal";
+import { getPrograms } from "../services/api";
 
 export default function ClassForm({ onSubmit, initialData, onCancel }) {
   const [classData, setClassData] = useState({
@@ -47,6 +49,10 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
     //{ value: "Pacific/Auckland", label: "🇳🇿 Giờ New Zealand (UTC+12/+13)" },
     //{ value: "UTC", label: "🌐 Giờ UTC" }
   ]);
+
+  // ✅ PROGRAM OPTIONS - từ API
+  const [programOptions, setProgramOptions] = useState([]);
+  const [showProgramModal, setShowProgramModal] = useState(false);
 
   // ✅ HÀM XÁC ĐỊNH CALENDAR TỪ GIỜ
   const determineCalendarByHour = (hour) => {
@@ -146,13 +152,36 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
     console.log("🧩 ClassForm mounted/updated with initialData:", initialData);
   }, [initialData]);
 
+  // ✅ LOAD PROGRAMS TỪ API
+  useEffect(() => {
+    loadPrograms();
+  }, []);
+
+  const loadPrograms = async () => {
+    try {
+      const data = await getPrograms();
+      setProgramOptions(data.map(p => ({ value: p.id, label: p.name })));
+    } catch (error) {
+      console.error("❌ Failed to load programs:", error);
+      // Fallback: không set error, để user có thể tiếp tục
+    }
+  };
+
+  // ✅ HELPER: GET PROGRAM NAME FROM ID
+  const getProgramNameFromId = (programId) => {
+    if (!programId) return "";
+    const program = programOptions.find(p => p.value === programId);
+    return program ? program.label : programId;
+  };
+
   // Tự động cập nhật name
   useEffect(() => {
+    const programName = getProgramNameFromId(classData.program);
     setClassData(prev => ({
       ...prev,
-      name: `${prev.classname} - ${prev.teacher} - ${prev.program}`
+      name: `${prev.classname} - ${prev.teacher} - ${programName}`
     }));
-  }, [classData.classname, classData.teacher, classData.program]);
+  }, [classData.classname, classData.teacher, classData.program, programOptions]);
 
   // ✅ CẬP NHẬT CALENDAR INFO KHI START TIME THAY ĐỔI
   useEffect(() => {
@@ -187,9 +216,9 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
       handleStartTimeChange(value);
     } 
     else if (inputType === "select-one") {
-    // Xử lý select dropdown
-    setClassData({ ...classData, [name]: value });
-  }
+      // Xử lý select dropdown
+      setClassData({ ...classData, [name]: value });
+    }
     else {
       setClassData({ ...classData, [name]: value });
     }
@@ -392,33 +421,37 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
         <div className={styles.formGroup}>
           <label className={styles.requiredLabel}>Chương trình</label>
           
-          <select
-            name="program"
-            value={classData.program}
-            onChange={handleChange}
-            required
-            className={styles.programSelect}
-          >
-            <option value="" disabled hidden>-- Chọn chương trình --</option>
-            <option value="toán">📐 Toán học</option>
-            <option value="vật_lý">⚛️ Vật lý</option>
-            <option value="hóa_học">🧪 Hóa học</option>
-            <option value="sinh_học">🧬 Sinh học</option>
-            <option value="tiếng_anh">🇬🇧 Tiếng Anh</option>
-            <option value="ngữ_văn">📖 Ngữ văn</option>
-            <option value="lịch_sử">🏛️ Lịch sử</option>
-            <option value="địa_lý">🗺️ Địa lý</option>
-            <option value="gdcd">⚖️ Giáo dục công dân</option>
-            <option value="tin_học">💻 Tin học</option>
-            <option value="công_nghệ">🔧 Công nghệ</option>
-            <option value="ielts">🎯 IELTS</option>
-            <option value="toefl">📝 TOEFL</option>
-            <option value="programming">👨‍💻 Lập trình</option>
-            <option value="stem">🔬 STEM</option>
-            <option value="khác">📌 Khác</option>
-          </select>
-          
-          
+          {/* Program Dropdown & Manage Button Container */}
+          <div className={styles.programContainer}>
+            <select
+              name="program"
+              value={classData.program}
+              onChange={handleChange}
+              required
+              className={styles.programSelect}
+            >
+              <option value="" disabled hidden>-- Chọn chương trình --</option>
+              {programOptions.length > 0 ? (
+                programOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))
+              ) : (
+                <option disabled>⏳ Đang tải danh sách...</option>
+              )}
+            </select>
+            
+            {/* Dedicated Manage Programs Button */}
+            <button
+              type="button"
+              className={styles.manageBtn}
+              onClick={() => setShowProgramModal(true)}
+              title="Thêm/sửa/xoá chương trình"
+            >
+              ⚙️ Quản lý
+            </button>
+          </div>
         </div>
       </div>
 
@@ -674,6 +707,13 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
           </button>
         )}
       </div>
+
+      {/* ✅ PROGRAM MANAGE MODAL */}
+      <ProgramManageModal
+        isOpen={showProgramModal}
+        onClose={() => setShowProgramModal(false)}
+        onProgramsUpdate={loadPrograms}
+      />
     </form>
   );
 }

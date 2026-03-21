@@ -1,9 +1,10 @@
 // frontend/src/components/ClassTable.js
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import styles from "./ClassTable.module.css";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
+import { getPrograms } from "../services/api";
 
 // Modal component để hiển thị chi tiết sự kiện lặp lại
 const RecurrenceModal = ({ events, onClose }) => {
@@ -120,6 +121,30 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
   const [pageSize, setPageSize] = useState(10);
   const [selectedRecurringEvents, setSelectedRecurringEvents] = useState(null);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [programsMap, setProgramsMap] = useState({}); // Map programId -> programName
+
+  // ✅ LOAD PROGRAMS TO MAP ID TO NAME
+  useEffect(() => {
+    const loadPrograms = async () => {
+      try {
+        const data = await getPrograms();
+        const map = {};
+        data.forEach(p => {
+          map[p.id] = p.name;
+        });
+        setProgramsMap(map);
+      } catch (error) {
+        console.error("❌ Failed to load programs:", error);
+      }
+    };
+    loadPrograms();
+  }, []);
+
+  // ✅ HELPER FUNCTION: GET PROGRAM NAME FROM ID
+  const getProgramName = (programId) => {
+    if (!programId) return "N/A";
+    return programsMap[programId] || programId; // Return name if found, otherwise return ID
+  };
 
   // --- Bộ lọc ---
   const [filters, setFilters] = useState({
@@ -166,7 +191,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
         "",
       meeting_id: cls.meeting_id || meetingId || "",
       passcode: cls.passcode || passcode || "",
-      program: cls.program || program || "N/A",
+      program: getProgramName(cls.program || program || ""),
       calendar_source: calendarInfo.source,
       calendar_name: calendarInfo.name,
       calendar_color: calendarInfo.color,

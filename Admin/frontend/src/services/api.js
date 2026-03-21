@@ -264,3 +264,55 @@ export const getTimezones = async () => {
     };
   }
 };
+
+// ============================================================
+// ================= PROGRAM MANAGEMENT API ===================
+// ============================================================
+
+export const getPrograms = async () => {
+  try {
+    console.log("📚 Fetching programs from backend...");
+    const res = await apiClient.get(`/programs`);
+    console.log("✅ Programs fetched successfully:", res.data.data);
+    return res.data.data || [];
+  } catch (error) {
+    console.error("❌ Error fetching programs:", error);
+    throw new Error(`Failed to fetch programs: ${error.message}`);
+  }
+};
+
+export const createProgram = async (name) => {
+  try {
+    console.log("➕ Creating program:", name);
+    const res = await apiClient.post(`/programs`, { name });
+    console.log("✅ Program created:", res.data.data);
+    return res.data.data;
+  } catch (error) {
+    console.error("❌ Error creating program:", error);
+    throw new Error(error.response?.data?.detail || `Failed to create program: ${error.message}`);
+  }
+};
+
+export const updateProgram = async (programId, name) => {
+  try {
+    console.log("✏️ Updating program:", programId, name);
+    const res = await apiClient.put(`/programs/${programId}`, { name });
+    console.log("✅ Program updated:", res.data.data);
+    return res.data.data;
+  } catch (error) {
+    console.error("❌ Error updating program:", error);
+    throw new Error(error.response?.data?.detail || `Failed to update program: ${error.message}`);
+  }
+};
+
+export const deleteProgram = async (programId) => {
+  try {
+    console.log("🗑️ Deleting program:", programId);
+    const res = await apiClient.delete(`/programs/${programId}`);
+    console.log("✅ Program deleted");
+    return res.data;
+  } catch (error) {
+    console.error("❌ Error deleting program:", error);
+    throw new Error(error.response?.data?.detail || `Failed to delete program: ${error.message}`);
+  }
+};

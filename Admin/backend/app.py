@@ -2,6 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, validator
 from calendar_crud import list_events, create_event, update_event, delete_event, get_event
+from program_crud import get_all_programs, create_program, update_program, delete_program
 from fastapi.middleware.cors import CORSMiddleware
 from ai_agent import get_schedule_suggestion
 from datetime import datetime
@@ -348,3 +349,87 @@ def health_check():
             "even": "configured"
         }
     }
+
+
+# ============================================================
+# ================= PROGRAM MANAGEMENT API ==================
+# ============================================================
+
+class ProgramRequest(BaseModel):
+    name: str
+
+
+@app.get("/programs")
+def get_programs():
+    """Lấy danh sách tất cả chương trình"""
+    try:
+        programs = get_all_programs()
+        return {
+            "success": True,
+            "data": programs,
+            "count": len(programs)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching programs: {str(e)}")
+
+
+@app.post("/programs")
+def create_new_program(request: ProgramRequest):
+    """Tạo chương trình mới"""
+    try:
+        if not request.name or not request.name.strip():
+            raise HTTPException(status_code=400, detail="Program name is required")
+        
+        program = create_program(request.name)
+        if program is None:
+            raise HTTPException(status_code=400, detail="Program name already exists or invalid")
+        
+        return {
+            "success": True,
+            "message": "Program created successfully",
+            "data": program
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating program: {str(e)}")
+
+
+@app.put("/programs/{program_id}")
+def update_existing_program(program_id: str, request: ProgramRequest):
+    """Cập nhật chương trình"""
+    try:
+        if not request.name or not request.name.strip():
+            raise HTTPException(status_code=400, detail="Program name is required")
+        
+        program = update_program(program_id, request.name)
+        if program is None:
+            raise HTTPException(status_code=404, detail="Program not found or name already exists")
+        
+        return {
+            "success": True,
+            "message": "Program updated successfully",
+            "data": program
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating program: {str(e)}")
+
+
+@app.delete("/programs/{program_id}")
+def delete_existing_program(program_id: str):
+    """Xóa chương trình"""
+    try:
+        success = delete_program(program_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Program not found")
+        
+        return {
+            "success": True,
+            "message": "Program deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting program: {str(e)}")

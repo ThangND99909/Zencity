@@ -5,9 +5,11 @@ import { parseZoomInfo } from "../utils/sanitizeDescription";
 import { getEvent } from "../services/api";
 import { checkScheduleConflict } from "../services/api";
 import { getTimezones } from "../services/api";
+import { getPrograms } from "../services/api";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import EventContextMenu from "./EventContextMenu";
 import EditRecurringModal from "./EditRecurringModal";
+import ProgramManageModal from "./ProgramManageModal";
 import moment from "moment-timezone";
 
 
@@ -45,6 +47,9 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     editMode: 'this'
   });
 
+  // ✅ PROGRAM MANAGEMENT
+  const [showProgramModal, setShowProgramModal] = useState(false);
+
 
   const [myCalendars, setMyCalendars] = useState([
     { id: 1, name: "Calendar Lẻ (Giờ lẻ)", color: "#1a73e8", checked: true },
@@ -70,25 +75,36 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     //{ value: "UTC", label: "🌐 Giờ UTC" }
   ]);
 
-  const [programOptions] = useState([
-    { value: "", label: "-- Chọn chương trình --" },
-    { value: "toán", label: "📐 Toán học" },
-    { value: "vật_lý", label: "⚛️ Vật lý" },
-    { value: "hóa_học", label: "🧪 Hóa học" },
-    { value: "sinh_học", label: "🧬 Sinh học" },
-    { value: "tiếng_anh", label: "🇬🇧 Tiếng Anh" },
-    { value: "ngữ_văn", label: "📖 Ngữ văn" },
-    { value: "lịch_sử", label: "🏛️ Lịch sử" },
-    { value: "địa_lý", label: "🗺️ Địa lý" },
-    { value: "gdcd", label: "⚖️ Giáo dục công dân" },
-    { value: "tin_học", label: "💻 Tin học" },
-    { value: "công_nghệ", label: "🔧 Công nghệ" },
-    { value: "ielts", label: "🎯 IELTS" },
-    { value: "toefl", label: "📝 TOEFL" },
-    { value: "programming", label: "👨‍💻 Lập trình" },
-    { value: "stem", label: "🔬 STEM" },
-    { value: "khác", label: "📌 Khác" },
+  const [programOptions, setProgramOptions] = useState([
+    { value: "", label: "-- Chọn chương trình --" }
   ]);
+
+  // ✅ ĐỊNH NGHĨA LOADPROGRAMS FUNCTION
+  const loadPrograms = async () => {
+    try {
+      const data = await getPrograms();
+      const options = [
+        { value: "", label: "-- Chọn chương trình --" },
+        ...data.map(p => ({ value: p.id, label: p.name }))
+      ];
+      setProgramOptions(options);
+    } catch (error) {
+      console.error("❌ Failed to load programs:", error);
+      // Keep default option on error
+    }
+  };
+
+  // ✅ HELPER: GET PROGRAM NAME FROM ID
+  const getProgramNameFromId = (programId) => {
+    if (!programId) return "";
+    const program = programOptions.find(p => p.value === programId);
+    return program ? program.label : programId;
+  };
+
+  // 📌 LOAD PROGRAMS FROM API
+  useEffect(() => {
+    loadPrograms();
+  }, []);
 
   const timeSlots = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, "0")}:00`);
 
@@ -558,17 +574,19 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
       const parsed = parseZoomInfo(rawDesc);
       const className = event.class_name || event.classname || parsed.classname || event.summary || event.name || "";
       const teacher = event.teacher || parsed.teacher || "";
-      const program = event.program || parsed.program || "";
+      const programId = event.program || parsed.program || "";
+      // ✅ CONVERT PROGRAM ID TO NAME FOR SUGGESTIONS
+      const programName = getProgramNameFromId(programId);
       if (className && className.toLowerCase().includes(q)) names.add(className);
       if (teacher && teacher.toLowerCase().includes(q)) teachers.add(teacher);
-      if (program && program.toLowerCase().includes(q)) programs.add(program);
+      if (programName && programName.toLowerCase().includes(q)) programs.add(programName);
     });
     return {
       names: [...names].slice(0, 6),
       teachers: [...teachers].slice(0, 6),
       programs: [...programs].slice(0, 6)
     };
-  }, [events, searchQuery]);
+  }, [events, searchQuery, programOptions]);
 
   // ✅ FILTER EVENTS DỰA TRÊN CALENDAR FILTER
   const filteredEvents = events.filter(event => {
@@ -1356,8 +1374,20 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
       fullState: newEvent
     });
     
-    if (!newEvent.title) {
-      alert("Vui lòng nhập tiêu đề!");
+    if (!newEvent.class_name || newEvent.class_name.trim() === "") {
+      alert("Vui lòng nhập tên lớp học!");
+      return;
+    }
+    if (!newEvent.teacher || newEvent.teacher.trim() === "") {
+      alert("Vui lòng nhập tên giáo viên!");
+      return;
+    }
+    if (!newEvent.program || newEvent.program.trim() === "") {
+      alert("Vui lòng chọn tên chương trình!");
+      return;
+    }
+    if (!newEvent.zoom_link || newEvent.zoom_link.trim() === "") {
+      alert("Vui lòng nhập liên kết Zoom!");
       return;
     }
     
@@ -1505,6 +1535,12 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
 
   useEffect(() => {
     const handleClickOutside = (e) => {
+      // ✅ CHECK IF CLICK IS FROM WITHIN A MODAL
+      const isClickFromModal = e.target.closest('[data-modal="true"]') || 
+                               e.target.closest('.modalOverlay');
+      
+      if (isClickFromModal) return; // Don't close popup if clicking on modal
+      
       if (popupRef.current && !popupRef.current.contains(e.target)) setShowPopup(false);
     };
     if (showPopup) document.addEventListener("mousedown", handleClickOutside);
@@ -2271,7 +2307,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
                 value={newEvent.class_name || ""}
                 onChange={(e) => {
                   const updated = { ...newEvent, class_name: e.target.value };
-                  updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${updated.program || ""}`.trim();
+                  const programName = getProgramNameFromId(updated.program);
+                  updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${programName}`.trim();
                   setNewEvent(updated);
                 }}
               />
@@ -2284,7 +2321,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
                 value={newEvent.teacher}
                 onChange={(e) => {
                   const updated = { ...newEvent, teacher: e.target.value };
-                  updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${updated.program || ""}`.trim();
+                  const programName = getProgramNameFromId(updated.program);
+                  updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${programName}`.trim();
                   setNewEvent(updated);
                 }}
               />
@@ -2292,21 +2330,33 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
 
             <label>
               Chương trình:
-              <select
-                value={newEvent.program}
-                onChange={(e) => {
-                  const updated = { ...newEvent, program: e.target.value };
-                  updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${updated.program || ""}`.trim();
-                  setNewEvent(updated);
-                }}
-                className={styles.programSelect}
-              >
-                {programOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <div className={styles.programContainer}>
+                <select
+                  value={newEvent.program}
+                  onChange={(e) => {
+                    const updated = { ...newEvent, program: e.target.value };
+                    const programName = getProgramNameFromId(updated.program);
+                    updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${programName}`.trim();
+                    setNewEvent(updated);
+                  }}
+                  className={styles.programSelect}
+                >
+                  <option value="" disabled hidden>-- Chọn chương trình --</option>
+                  {programOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className={styles.manageBtn}
+                  onClick={() => setShowProgramModal(true)}
+                  title="Thêm/sửa/xoá chương trình"
+                >
+                  ⚙️ Quản lý
+                </button>
+              </div>
             </label>
 
             <label>
@@ -2871,6 +2921,13 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
           </div>
         </div>
       )}
+
+      {/* ✅ PROGRAM MANAGE MODAL */}
+      <ProgramManageModal
+        isOpen={showProgramModal}
+        onClose={() => setShowProgramModal(false)}
+        onProgramsUpdate={loadPrograms}
+      />
     </div>
   );
 });
