@@ -1,10 +1,12 @@
 // frontend/src/components/ClassForm.js
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import styles from "./ClassForm.module.css";
 import ProgramManageModal from "./ProgramManageModal";
 import { getPrograms } from "../services/api";
 
 export default function ClassForm({ onSubmit, initialData, onCancel }) {
+  const submitRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [classData, setClassData] = useState({
     name: "",
     classname: "",
@@ -33,21 +35,9 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
   });
 
   // ✅ TIMEZONE OPTIONS
-  const [timezoneOptions, setTimezoneOptions] = useState([
+  const [timezoneOptions] = useState([
     { value: "Asia/Ho_Chi_Minh", label: "🇻🇳 Giờ Việt Nam (UTC+7)" },
     { value: "America/Chicago", label: "🇺🇸 Giờ miền Trung - Chicago (UTC-6/-5)" },
-    //{ value: "America/New_York", label: "🇺🇸 Giờ miền Đông - New York (UTC-5/-4)" },
-    //{ value: "America/Denver", label: "🇺🇸 Giờ miền Núi - Denver (UTC-7/-6)" },
-    //{ value: "America/Los_Angeles", label: "🇺🇸 Giờ miền Tây - Los Angeles (UTC-8/-7)" },
-    //{ value: "Europe/London", label: "🇬🇧 Giờ London (UTC+0/+1)" },
-    //{ value: "Europe/Paris", label: "🇫🇷 Giờ Paris (UTC+1/+2)" },
-    //{ value: "Europe/Berlin", label: "🇩🇪 Giờ Berlin (UTC+1/+2)" },
-    //{ value: "Asia/Tokyo", label: "🇯🇵 Giờ Tokyo (UTC+9)" },
-    //{ value: "Asia/Seoul", label: "🇰🇷 Giờ Seoul (UTC+9)" },
-    //{ value: "Asia/Singapore", label: "🇸🇬 Giờ Singapore (UTC+8)" },
-    //{ value: "Australia/Sydney", label: "🇦🇺 Giờ Sydney (UTC+10/+11)" },
-    //{ value: "Pacific/Auckland", label: "🇳🇿 Giờ New Zealand (UTC+12/+13)" },
-    //{ value: "UTC", label: "🌐 Giờ UTC" }
   ]);
 
   // ✅ PROGRAM OPTIONS - từ API
@@ -274,7 +264,7 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
     return errors;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     // Validate form
@@ -308,8 +298,17 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
     // Show confirmation with calendar info
     const confirmMessage = `Event sẽ được lưu vào:\n${calendarInfo.name}\n\nGiờ bắt đầu: ${new Date(classData.start).getHours()}h (${calendarInfo.hourType === 'even' ? 'chẵn' : 'lẻ'})\n\nXác nhận tạo event?`;
     
-    if (window.confirm(confirmMessage)) {
-      onSubmit(formattedData);
+    if (!window.confirm(confirmMessage) || submitRef.current) return;
+
+    submitRef.current = true;
+    setIsSubmitting(true);
+    try {
+      await onSubmit(formattedData);
+    } catch (error) {
+      console.error("❌ Failed to submit class form:", error);
+    } finally {
+      submitRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -338,19 +337,6 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
       color: "#1a73e8",
       badge: "📘",
       hourType: "odd",
-    });
-  };
-
-  // ✅ HÀM FORMAT THỜI GIAN HIỂN THỊ
-  const formatTimeDisplay = (datetimeLocal) => {
-    if (!datetimeLocal) return "N/A";
-    const date = new Date(datetimeLocal);
-    return date.toLocaleString("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
     });
   };
 
@@ -687,22 +673,21 @@ export default function ClassForm({ onSubmit, initialData, onCancel }) {
 
       {/* ================= BUTTONS ================= */}
       <div className={styles.buttonGroup}>
-        <button type="submit" className={styles.saveBtn}>
-          {initialData ? "💾 Update" : "➕ Create"}
-          <span className={styles.saveCalendar}>
-            {" "}({calendarInfo.badge})
-          </span>
+        <button type="submit" className={styles.saveBtn} disabled={isSubmitting}>
+          {isSubmitting ? "⏳ Đang lưu..." : initialData ? "💾 Update" : "➕ Create"}
+          {!isSubmitting && <span className={styles.saveCalendar}>{" "}({calendarInfo.badge})</span>}
         </button>
         <button 
           type="button" 
           className={styles.resetBtn} 
           onClick={handleReset}
           title="Reset form"
+          disabled={isSubmitting}
         >
           🔄 Reset
         </button>
         {onCancel && (
-          <button type="button" className={styles.cancelBtn} onClick={onCancel}>
+          <button type="button" className={styles.cancelBtn} onClick={onCancel} disabled={isSubmitting}>
             ❌ Cancel
           </button>
         )}

@@ -775,5 +775,61 @@
     "passcode": "654",
     "classname": "Room A2",
     "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
+  },
+  "ipn10qhgr8n5n8ksq2lrflc45s": {
+    "zoom_link": "test.zoom.vn",
+    "meeting_id": "123",
+    "passcode": "233",
+    "classname": "Room1",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
+  },
+  "akf0vobd2st517dmqugb1r6omk": {
+    "zoom_link": "test.com",
+    "meeting_id": "4454",
+    "passcode": "5454",
+    "classname": "Room2",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "llot1kpvrsjsfcsj6qoeveern8": {
+    "zoom_link": "test",
+    "meeting_id": "5345",
+    "passcode": "6546",
+    "classname": "Room5",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "2e5883gj7qdgnrj0kd2f0vjim0": {
+    "zoom_link": "test",
+    "meeting_id": "543",
+    "passcode": "543",
+    "classname": "Room6",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "lscrb4pe9l33hsbe498e8neboc": {
+    "zoom_link": "test",
+    "meeting_id": "432",
+    "passcode": "432",
+    "classname": "Room7",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "5n7lfr8ji2on6jbfi6ne7lu6gs": {
+    "zoom_link": "test",
+    "meeting_id": "654",
+    "passcode": "765",
+    "classname": "Room10",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
+  },
+  "b4057175ea4459ab882222f81939073a": {
+    "zoom_link": "test",
+    "meeting_id": "654",
+    "passcode": "765",
+    "classname": "Room11",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "6537995b73a46e8deef386f853dccfdb": {
+    "zoom_link": "test",
+    "meeting_id": "645",
+    "passcode": "756",
+    "classname": "Room12",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
   }
 }

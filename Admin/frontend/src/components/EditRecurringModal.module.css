@@ -28,35 +28,6 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-.editRecurringHeader {
-  font-size: 20px;
-  font-weight: bold;
-  margin-bottom: 16px;
-  color: #1a73e8;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.editRecurringEventInfo {
-  background: #f8f9fa;
-  padding: 12px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  border-left: 4px solid #1a73e8;
-}
-
-.editRecurringEventInfo h4 {
-  margin: 0 0 8px 0;
-  color: #333;
-}
-
-.editRecurringEventInfo p {
-  margin: 4px 0;
-  color: #666;
-  font-size: 14px;
-}
-
 .editOptions {
   margin: 20px 0;
 }

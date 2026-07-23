@@ -1,59 +1,139 @@
-from google_calendar import calendar_service, CALENDARS
+from google_calendar import calendar_service, CALENDARS, create_calendar_http
 from googleapiclient.errors import HttpError
 import json
+import hashlib
+import socket
+import ssl
+import uuid
 from pathlib import Path
 from recurrence_helper import build_recurrence_rule
 from datetime import datetime, timedelta, timezone
 import pytz
-from calendar_utils import force_delete_event_by_summary_and_time
+import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 EXTRA_FILE = Path("data/classes_extra.json")
 
-try:
-    from recurrence_utils import (
-        update_recurrence_for_following_delete,
-        is_first_recurring_instance,
-        parse_rrule_string,
-        stop_recurrence_at_instance,
-        parse_and_update_recurrence_rule
-    )
-    HAS_RECURRENCE_UTILS = True
-    print("✅ Recurrence utils imported successfully")
-except ImportError as e:
-    HAS_RECURRENCE_UTILS = False
-    print(f"⚠️ Could not import recurrence_utils: {e}")
+# ========== IN-MEMORY CACHE ==========
+_events_cache = {}
+_calendar_sync_state = {}
+_cache_lock = threading.RLock()
+_refresh_lock = threading.Lock()
+CACHE_TTL = 60  # seconds — đủ để tránh duplicate requests, không quá stale
 
-    # Define fallback functions
-    def stop_recurrence_at_instance(master_event, instance_start_str):
-        print("⚠️ Using simplified stop_recurrence_at_instance")
-        from datetime import datetime, timedelta
-        import re
-        
+EVENT_LIST_FIELDS = (
+    "nextPageToken,nextSyncToken,"
+    "items(id,status,summary,description,location,start,end,recurrence,"
+    "recurringEventId,originalStartTime)"
+)
+
+GOOGLE_WRITE_TIMEOUT = 30
+GOOGLE_WRITE_ATTEMPTS = 2
+
+
+class IdempotencyConflictError(Exception):
+    """The same idempotency key was reused with a different create payload."""
+
+
+def _event_payload_hash(event):
+    payload = json.dumps(event, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def _get_event_for_idempotency(calendar_id, event_id):
+    """Return an existing event by deterministic ID, or None when it is absent."""
+    try:
+        return calendar_service.events().get(
+            calendarId=calendar_id,
+            eventId=event_id
+        ).execute(
+            http=create_calendar_http(timeout=GOOGLE_WRITE_TIMEOUT),
+            num_retries=1
+        )
+    except HttpError as error:
+        if getattr(error.resp, 'status', None) == 404:
+            return None
+        raise
+
+
+def _validate_idempotent_event(existing_event, payload_hash):
+    private = existing_event.get('extendedProperties', {}).get('private', {})
+    existing_hash = private.get('zencityPayloadHash')
+    if existing_hash != payload_hash:
+        raise IdempotencyConflictError(
+            "The idempotency key has already been used with different event data"
+        )
+    return existing_event
+
+
+def _insert_event_idempotently(calendar_id, event, idempotency_key=None):
+    """Insert once even when clients retry or the Google response is lost."""
+    request_key = idempotency_key or uuid.uuid4().hex
+    event_id = hashlib.sha256(request_key.encode('utf-8')).hexdigest()[:32]
+    payload_hash = _event_payload_hash(event)
+    event = dict(event)
+    event['id'] = event_id
+    event['extendedProperties'] = {
+        **event.get('extendedProperties', {}),
+        'private': {
+            **event.get('extendedProperties', {}).get('private', {}),
+            'zencityPayloadHash': payload_hash
+        }
+    }
+
+    last_error = None
+    for attempt in range(1, GOOGLE_WRITE_ATTEMPTS + 1):
         try:
-            instance_dt = datetime.fromisoformat(instance_start_str.replace('Z', '+00:00'))
-            until_str = (instance_dt - timedelta(seconds=1)).strftime('%Y%m%dT%H%M%SZ')
-            
-            recurrence = master_event.get('recurrence', [])
-            updated = []
-            
-            for rule in recurrence:
-                if 'RRULE:' in rule:
-                    rrule = rule.replace('RRULE:', '')
-                    # Simple: replace or add UNTIL
-                    if 'UNTIL=' in rrule:
-                        rrule = re.sub(r'UNTIL=[\dTZ]+', f'UNTIL={until_str}', rrule)
-                    else:
-                        rrule = f'{rrule};UNTIL={until_str}'
-                    updated.append(f'RRULE:{rrule}')
-                else:
-                    updated.append(rule)
-            
-            return updated
-        except:
-            return master_event.get('recurrence', [])
-        
-def handle_calendar_change(event_id, old_calendar_id, new_calendar_id, class_info, edit_mode, current_event=None):
-    pass
+            return calendar_service.events().insert(
+                calendarId=calendar_id,
+                body=event
+            ).execute(
+                http=create_calendar_http(timeout=GOOGLE_WRITE_TIMEOUT),
+                num_retries=1
+            )
+        except HttpError as error:
+            status = getattr(error.resp, 'status', None)
+            if status == 409:
+                existing = _get_event_for_idempotency(calendar_id, event_id)
+                if existing:
+                    print(f"♻️ Reusing event for idempotency key: {event_id}")
+                    return _validate_idempotent_event(existing, payload_hash)
+            last_error = error
+            if status not in (429, 500, 502, 503, 504) or attempt == GOOGLE_WRITE_ATTEMPTS:
+                raise
+        except (TimeoutError, socket.timeout, ssl.SSLError, ConnectionError) as error:
+            last_error = error
+            try:
+                existing = _get_event_for_idempotency(calendar_id, event_id)
+                if existing:
+                    print(f"✅ Event existed after a lost/timeout response: {event_id}")
+                    return _validate_idempotent_event(existing, payload_hash)
+            except (TimeoutError, socket.timeout, ssl.SSLError, ConnectionError, HttpError) as verify_error:
+                print(f"⚠️ Could not verify timed-out insert: {verify_error}")
+            if attempt == GOOGLE_WRITE_ATTEMPTS:
+                raise
+
+        time.sleep(0.25 * attempt)
+
+    raise last_error
+
+def _get_cache(key):
+    with _cache_lock:
+        entry = _events_cache.get(key)
+        if entry and time.time() - entry['ts'] < CACHE_TTL:
+            return entry['data']
+    return None
+
+def _set_cache(key, data):
+    with _cache_lock:
+        _events_cache[key] = {'data': data, 'ts': time.time()}
+
+def invalidate_cache():
+    """Gọi khi có thay đổi (create/update/delete) để cache không stale"""
+    with _cache_lock:
+        _events_cache.clear()
+        _calendar_sync_state.clear()
 
 # ========== HELPER FUNCTIONS ==========
 def normalize_datetime_with_timezone(dt_str, timezone_str):
@@ -371,149 +451,200 @@ def handle_calendar_change(event_id, old_calendar_id, new_calendar_id, class_inf
         raise
 # ---------------- Events CRUD ----------------
 # ========== HÀM LẤY EVENTS TỪ MULTIPLE CALENDARS ==========
-def list_events(calendar_type='both'):
-    """
-    Lấy events từ các calendar - HIỆU QUẢ & ĐƠN GIẢN
-    """
-    try:
-        all_events = []
-        cancelled_count = 0
-        
-        # Load extra data trước
+def _normalize_event_window(time_min=None, time_max=None):
+    """Return a bounded RFC3339 window used by Google and cache keys."""
+    now = datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def parse(value, fallback):
+        if value is None:
+            return fallback
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(
+            str(value).replace('Z', '+00:00')
+        )
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    start = parse(time_min, today - timedelta(days=1))
+    end = parse(time_max, today + timedelta(days=61))
+    if end <= start:
+        raise ValueError("time_max must be later than time_min")
+    if end - start > timedelta(days=120):
+        raise ValueError("The requested calendar window cannot exceed 120 days")
+
+    return (
+        start.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+        end.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    )
+
+
+def _execute_event_pages(calendar_id, http, request_params):
+    """Fetch all result pages and preserve the final incremental sync token."""
+    items = []
+    page_token = None
+    next_sync_token = None
+    while True:
+        params = dict(request_params)
+        if page_token:
+            params['pageToken'] = page_token
+        response = calendar_service.events().list(
+            calendarId=calendar_id,
+            **params
+        ).execute(http=http)
+        items.extend(response.get('items', []))
+        page_token = response.get('nextPageToken')
+        next_sync_token = response.get('nextSyncToken') or next_sync_token
+        if not page_token:
+            return items, next_sync_token
+
+
+def _decorate_events(events, calendar_id, calendar_type_name, extra):
+    """Attach application metadata without mutating the cached Google objects."""
+    results = []
+    for raw_event in events:
+        if raw_event.get('status') == 'cancelled':
+            continue
+        event = dict(raw_event)
+        recurring_event_id = event.get('recurringEventId')
+        if event.get('recurrence') and not recurring_event_id:
+            continue
+        event['_calendar_source'] = calendar_type_name
+        event['_calendar_id'] = calendar_id
+        event['_is_instance'] = bool(recurring_event_id)
+        event['_is_master'] = False
+        if recurring_event_id:
+            event['_master_event_id'] = recurring_event_id
+        event_id = event.get('id')
+        if event_id in extra:
+            event.update({
+                'zoom_link': extra[event_id].get('zoom_link', ''),
+                'meeting_id': extra[event_id].get('meeting_id', ''),
+                'passcode': extra[event_id].get('passcode', ''),
+                'classname': extra[event_id].get('classname', '')
+            })
+        results.append(event)
+    return results
+
+
+def _fetch_single_calendar(calendar_id, time_min, time_max, extra):
+    """Fetch one calendar with incremental sync and a thread-local transport."""
+    calendar_type_name = get_calendar_type_by_id(calendar_id)
+    state_key = (calendar_id, time_min, time_max)
+    http = create_calendar_http()
+    with _cache_lock:
+        state = _calendar_sync_state.get(state_key)
+
+    event_map = None
+    sync_token = None
+    if state and state.get('sync_token'):
+        try:
+            changes, sync_token = _execute_event_pages(calendar_id, http, {
+                'syncToken': state['sync_token'],
+                'maxResults': 500,
+                'singleEvents': True,
+                'showDeleted': True,
+                'fields': EVENT_LIST_FIELDS
+            })
+            event_map = dict(state['events'])
+            for event in changes:
+                event_id = event.get('id')
+                if not event_id:
+                    continue
+                if event.get('status') == 'cancelled':
+                    event_map.pop(event_id, None)
+                else:
+                    event_map[event_id] = event
+            print(f"  ⚡ {calendar_type_name}: {len(changes)} incremental changes")
+        except HttpError as error:
+            if getattr(error.resp, 'status', None) != 410:
+                print(f"⚠️ Incremental sync failed for {calendar_type_name}; serving stale cache: {error}")
+                return _decorate_events(state['events'].values(), calendar_id, calendar_type_name, extra)
+            print(f"🔄 Sync token expired for {calendar_type_name}; rebuilding window")
+
+    if event_map is None:
+        try:
+            events, sync_token = _execute_event_pages(calendar_id, http, {
+                'timeMin': time_min,
+                'timeMax': time_max,
+                'maxResults': 500,
+                'singleEvents': True,
+                'showDeleted': True,
+                'fields': EVENT_LIST_FIELDS
+            })
+        except Exception:
+            if state:
+                return _decorate_events(state['events'].values(), calendar_id, calendar_type_name, extra)
+            raise
+        event_map = {
+            event['id']: event for event in events
+            if event.get('id') and event.get('status') != 'cancelled'
+        }
+        print(f"  📅 {calendar_type_name}: {len(event_map)} events (full sync)")
+
+    with _cache_lock:
+        _calendar_sync_state[state_key] = {
+            'events': event_map,
+            'sync_token': sync_token
+        }
+    return _decorate_events(event_map.values(), calendar_id, calendar_type_name, extra)
+
+
+def list_events(calendar_type='both', time_min=None, time_max=None):
+    """Load a bounded event window from one or both calendars."""
+    if calendar_type not in ('odd', 'even', 'both'):
+        raise ValueError("calendar_type must be one of: odd, even, both")
+
+    time_min, time_max = _normalize_event_window(time_min, time_max)
+    cache_key = (calendar_type, time_min, time_max)
+    cached = _get_cache(cache_key)
+    if cached is not None:
+        print(f"⚡ Cache hit for '{calendar_type}': {len(cached)} events")
+        return cached
+
+    # Only one request refreshes the process cache; other requests reuse its result.
+    with _refresh_lock:
+        cached = _get_cache(cache_key)
+        if cached is not None:
+            return cached
+
         extra = load_extra()
-        
-        # Xác định calendars cần lấy
         calendar_ids = []
-        if calendar_type == 'odd' or calendar_type == 'both':
+        if calendar_type in ('odd', 'both'):
             calendar_ids.append(CALENDARS['odd'])
-        if calendar_type == 'even' or calendar_type == 'both':
+        if calendar_type in ('even', 'both'):
             calendar_ids.append(CALENDARS['even'])
-        
+
         print(f"🔄 Fetching events from {len(calendar_ids)} calendar(s): {calendar_type}")
-        
-        now = datetime.utcnow()
-        time_min = now.isoformat() + 'Z'
-        time_max = (now + timedelta(days=60)).isoformat() + 'Z'
-        
-        for calendar_id in calendar_ids:
-            try:
-                calendar_type_name = get_calendar_type_by_id(calendar_id)
-                print(f"  📅 Fetching from calendar: {calendar_type_name}")
-                
-                # **QUAN TRỌNG: CHỈNH SỬA Ở ĐÂY**
-                # Sử dụng timeMin để chỉ lấy events tương lai
-                events_result = calendar_service.events().list(
-                    calendarId=calendar_id,
-                    #timeMin=time_min,  # ⚠️ THÊM timeMin để chỉ lấy events tương lai
-                    timeMax=time_max,
-                    maxResults=2500,
-                    singleEvents=True,  # ⚠️ QUAN TRỌNG: True để có instances
-                    orderBy='startTime',
-                    showDeleted=False
-                ).execute()
-                
-                events = events_result.get('items', [])
-                print(f"  📊 Found {len(events)} events")
-                
-                # **QUAN TRỌNG: LOG CHI TIẾT ĐỂ DEBUG**
-                master_events = []
-                instance_events = []
-                regular_events = []
-                
-                for event in events:
-                    if event.get('recurrence') and not event.get('recurringEventId'):
-                        master_events.append(event)
-                    elif event.get('recurringEventId'):
-                        instance_events.append(event)
-                    else:
-                        regular_events.append(event)
-                
-                print(f"    👑 Master events: {len(master_events)}")
-                print(f"    🔄 Instance events: {len(instance_events)}")
-                print(f"    📌 Regular events: {len(regular_events)}")
-                
-                # **XỬ LÝ TỪNG EVENT**
-                for event in events:
-                    event_id = event.get('id')
-                    
-                    # Skip cancelled events
-                    if event.get('status') == 'cancelled':
-                        cancelled_count += 1
-                        continue
-                    
-                    # **PHÂN LOẠI EVENT - SỬA LẠI LOGIC**
-                    recurring_event_id = event.get('recurringEventId')
-                    has_recurrence = event.get('recurrence')
-                    
-                    # THÊM METADATA
-                    event['_calendar_source'] = calendar_type_name
-                    event['_calendar_id'] = calendar_id
-                    
-                    if recurring_event_id:
-                        # Đây là instance của recurring event
-                        event['_is_instance'] = True
-                        event['_is_master'] = False
-                        event['_master_event_id'] = recurring_event_id
-                    elif has_recurrence:
-                        # **QUAN TRỌNG: MASTER EVENT - KHÔNG THÊM VÀO ALL_EVENTS**
-                        event['_is_master'] = True
-                        event['_is_instance'] = False
-                        
-                        # **SKIP MASTER EVENTS HOÀN TOÀN**
-                        print(f"    🚫 Skipping master event: {event.get('summary', 'No title')}")
-                        continue  # ⚠️ KHÔNG THÊM MASTER VÀO ALL_EVENTS
-                    else:
-                        # Regular non-recurring event
-                        event['_is_master'] = False
-                        event['_is_instance'] = False
-                    
-                    # THÊM EXTRA DATA
-                    if event_id in extra:
-                        event['zoom_link'] = extra[event_id].get('zoom_link', '')
-                        event['meeting_id'] = extra[event_id].get('meeting_id', '')
-                        event['passcode'] = extra[event_id].get('passcode', '')
-                        event['classname'] = extra[event_id].get('classname', '')
-                    
-                    # THÊM VÀO ALL_EVENTS
-                    all_events.append(event)
-                
-                print(f"    ✅ Added to display: {len([e for e in all_events if e.get('_calendar_id') == calendar_id])} events")
-                
-            except HttpError as error:
-                print(f"❌ Error fetching from calendar {calendar_id}: {error}")
-                continue
-            except Exception as e:
-                print(f"❌ Unexpected error with calendar {calendar_id}: {e}")
-                continue
-        
-        # **SORT LẠI (cho chắc chắn)**
+        all_events = []
+        if len(calendar_ids) > 1:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = {
+                    executor.submit(_fetch_single_calendar, calendar_id, time_min, time_max, extra): calendar_id
+                    for calendar_id in calendar_ids
+                }
+                for future in as_completed(futures):
+                    all_events.extend(future.result())
+        else:
+            all_events.extend(_fetch_single_calendar(calendar_ids[0], time_min, time_max, extra))
+
         def get_start_time(event):
             start = event.get('start', {})
-            dt_str = start.get('dateTime') or start.get('date')
-            if dt_str:
-                try:
-                    return datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-                except:
-                    return datetime.max
-            return datetime.max
-        
+            value = start.get('dateTime') or start.get('date')
+            if not value:
+                return datetime.max.replace(tzinfo=timezone.utc)
+            try:
+                parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc)
+            except ValueError:
+                return datetime.max.replace(tzinfo=timezone.utc)
+
         all_events.sort(key=get_start_time)
-        
-        # **THỐNG KÊ TỔNG**
-        total_instances = len([e for e in all_events if e.get('_is_instance')])
-        total_regular = len([e for e in all_events if not e.get('_is_instance') and not e.get('_is_master')])
-        
-        print(f"📅 Total displayed: {len(all_events)} events")
-        print(f"📊 Calendar breakdown: ODD: {len([e for e in all_events if e.get('_calendar_source') == 'odd'])}, EVEN: {len([e for e in all_events if e.get('_calendar_source') == 'even'])}")
-        print(f"📈 Event types: {total_instances} instances, {total_regular} regular")
-        
+        print(f"📅 Total: {len(all_events)} events (cache {CACHE_TTL}s)")
+        _set_cache(cache_key, all_events)
         return all_events
-        
-    except Exception as e:
-        print(f"❌ Error in list_events: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
 
 # ✅ THÊM HÀM MỚI: Lấy single event bằng ID
 def get_event(event_id):
@@ -572,7 +703,7 @@ def get_event(event_id):
         raise
 
 # ----------------- CREATE -----------------
-def create_event(class_info):
+def create_event(class_info, idempotency_key=None):
     """
     Tạo event với đầy đủ hỗ trợ:
     - Recurrence (lặp lại)
@@ -583,14 +714,12 @@ def create_event(class_info):
     try:
         from datetime import datetime
         import pytz
-        import ssl
 
         print(f"🎯 ========== CREATE EVENT ==========")
         print(f"📥 Received class_info: {class_info}")
 
         # 1️⃣ XÁC ĐỊNH TIMEZONE NGƯỜI DÙNG
         timezone = validate_timezone(class_info.get('timezone', 'Asia/Ho_Chi_Minh'))
-        tz = pytz.timezone(timezone)
         print(f"🕐 Using timezone: {timezone}")
 
         # 2️⃣ NORMALIZE START/END DATETIME
@@ -624,34 +753,12 @@ def create_event(class_info):
             'recurrence': class_info.get('rrule', [])
         }
 
-        # 7️⃣ GỬI LÊN GOOGLE CALENDAR
-        try:
-            result = calendar_service.events().insert(
-                calendarId=calendar_id,
-                body=event
-            ).execute()
-        except ssl.SSLError as ssl_err:
-            # SSL error qua Cloudflare tunnel nhưng event vẫn được tạo
-            if "LENGTH_MISMATCH" in str(ssl_err) or "internal error" in str(ssl_err):
-                print(f"⚠️  SSL warning (event may be created): {ssl_err}")
-                # Thử lấy event gần nhất theo summary + time để verify
-                try:
-                    events = calendar_service.events().list(
-                        calendarId=calendar_id,
-                        q=class_info['name'],
-                        maxResults=1,
-                        orderBy='startTime',
-                        singleEvents=True
-                    ).execute()
-                    if events.get('items'):
-                        result = events['items'][0]
-                        print(f"✅ Event verified as created (found by search)")
-                    else:
-                        raise ssl_err
-                except:
-                    raise ssl_err
-            else:
-                raise ssl_err
+        # 7️⃣ GỬI LÊN GOOGLE CALENDAR (idempotent across retries/double-clicks)
+        result = _insert_event_idempotently(
+            calendar_id,
+            event,
+            idempotency_key=idempotency_key
+        )
         event_id = result.get('id')
 
         # 8️⃣ LƯU EXTRA DATA
@@ -674,7 +781,7 @@ def create_event(class_info):
 
             if new_calendar_id != calendar_id:
                 print(f"🔄 Timezone change detected → moving event to new calendar")
-                moved = calendar_service.events().move(
+                calendar_service.events().move(
                     calendarId=calendar_id,
                     eventId=event_id,
                     destination=new_calendar_id
@@ -687,12 +794,7 @@ def create_event(class_info):
         return result
 
     except Exception as e:
-        # Xử lý SSL errors riêng biệt
-        if isinstance(e, ssl.SSLError) and ("LENGTH_MISMATCH" in str(e) or "internal error" in str(e)):
-            print(f"⚠️  SSL warning (non-critical): {e}")
-            print(f"💡 This is a known issue with Python 3.13 + Cloudflare tunnel")
-        else:
-            print(f"❌ Error in create_event: {e}")
+        print(f"❌ Error in create_event: {e}")
         import traceback
         traceback.print_exc()
         raise
@@ -754,7 +856,6 @@ def update_this_instance(instance_id, master_event_id, calendar_id, class_info):
         print(f"🆕 Creating new independent event (detached from series)")
 
         timezone = validate_timezone(class_info.get("timezone", "Asia/Ho_Chi_Minh"))
-        tz = pytz.timezone(timezone)
 
         # 🕐 Giữ nguyên giờ local, đổi UTC offset tương ứng
         start_normalized = normalize_datetime_with_timezone(
@@ -807,7 +908,7 @@ def update_this_instance(instance_id, master_event_id, calendar_id, class_info):
                 print(f"   From: {calendar_id}")
                 print(f"   To:   {new_calendar_id}")
 
-                moved = calendar_service.events().move(
+                calendar_service.events().move(
                     calendarId=calendar_id,
                     eventId=new_event_id,
                     destination=new_calendar_id
@@ -937,14 +1038,6 @@ def update_event(event_id, class_info):
         for key, value in class_info.items():
             if key.startswith('_'):
                 print(f"   - {key}: {value}")
-        
-        # **QUAN TRỌNG: Check nếu đây là instance ID nhưng gửi master ID**
-        is_instance_id = ('_' in event_id and 
-                         (event_id.count('_') >= 2 or 
-                          '_R' in event_id or 
-                          '_Z' in event_id))
-        
-
         
         # Find which calendar has this event
         current_event = None
@@ -1230,9 +1323,6 @@ def update_following_events(instance_id, master_event_id, calendar_id, class_inf
         if not instance_start or not master_start:
             raise ValueError("⚠️ Missing start time")
 
-        instance_dt = datetime.fromisoformat(instance_start.replace("Z", "+00:00"))
-        master_dt = datetime.fromisoformat(master_start.replace("Z", "+00:00"))
-
         # 4️⃣ Dừng chuỗi cũ tại instance
         print(f"🧩 Stopping old series at {instance_start}")
         updated_master = stop_recurrence_at_instance(master, instance_start)
@@ -1307,7 +1397,7 @@ def update_following_events(instance_id, master_event_id, calendar_id, class_inf
             new_calendar_id = determine_calendar_by_hour(start_iso)
             if new_calendar_id != calendar_id:
                 print(f"🎯 FOLLOWING MODE: Hour changed → moving new master to new calendar")
-                moved = calendar_service.events().move(
+                calendar_service.events().move(
                     calendarId=calendar_id,
                     eventId=new_event_id,
                     destination=new_calendar_id,
@@ -1327,148 +1417,6 @@ def update_following_events(instance_id, master_event_id, calendar_id, class_inf
         raise
 
 
-def calculate_event_dates(start_dt, recurrence_type, count, byday=None, interval=1):
-    """
-    Tính toán dates cho các events trong series
-    """
-    from datetime import datetime, timedelta
-    
-    dates = [start_dt]
-    
-    if recurrence_type == "DAILY":
-        for i in range(1, count):
-            next_date = start_dt + timedelta(days=i * interval)
-            dates.append(next_date)
-    
-    elif recurrence_type == "WEEKLY":
-        # Map day codes to weekday numbers
-        day_map = {'MO': 0, 'TU': 1, 'WE': 2, 'TH': 3, 'FR': 4, 'SA': 5, 'SU': 6}
-        
-        if byday:
-            target_days = [day_map.get(day.upper(), 0) for day in byday]
-        else:
-            # Mặc định: cùng ngày trong tuần
-            target_days = [start_dt.weekday()]
-        
-        week_count = 0
-        current_date = start_dt
-        
-        while len(dates) < count:
-            current_date = current_date + timedelta(days=1)
-            week_count = (current_date - start_dt).days // 7
-            
-            if week_count % interval == 0 and current_date.weekday() in target_days:
-                dates.append(current_date)
-    
-    elif recurrence_type == "MONTHLY":
-        for i in range(1, count):
-            # Thêm i tháng
-            year = start_dt.year + (start_dt.month + i - 1) // 12
-            month = (start_dt.month + i - 1) % 12 + 1
-            day = min(start_dt.day, 28)  # Đơn giản hóa
-            
-            try:
-                next_date = datetime(year, month, day, start_dt.hour, start_dt.minute)
-                dates.append(next_date)
-            except:
-                # Fallback: thêm 30 ngày
-                next_date = start_dt + timedelta(days=30 * i)
-                dates.append(next_date)
-    
-    return dates[:count]  # Đảm bảo đúng số lượng
-
-def delete_following_instances(master_event_id, calendar_id, stop_before_instance_start):
-    """
-    Xóa thực sự các instances sau instance hiện tại
-    """
-    try:
-        print(f"🗑️ Deleting ALL instances after: {stop_before_instance_start}")
-        
-        # 1. Lấy tất cả instances của master này
-        events_result = calendar_service.events().list(
-            calendarId=calendar_id,
-            timeMin=stop_before_instance_start,  # Lấy từ instance này trở đi
-            maxResults=2500,
-            singleEvents=True,  # QUAN TRỌNG: lấy instances
-            orderBy='startTime'
-        ).execute()
-        
-        all_events = events_result.get('items', [])
-        
-        # 2. Lọc chỉ các instances của master này mà SAU thời điểm xóa
-        instances_to_delete = []
-        for event in all_events:
-            if event.get('recurringEventId') == master_event_id:
-                event_start = event.get('start', {}).get('dateTime')
-                if event_start and event_start > stop_before_instance_start:
-                    instances_to_delete.append(event)
-        
-        print(f"📊 Found {len(instances_to_delete)} instances to delete")
-        
-        # 3. Xóa từng instance
-        for instance in instances_to_delete:
-            try:
-                print(f"🗑️ Deleting instance: {instance.get('id')} - {instance.get('start', {}).get('dateTime')}")
-                calendar_service.events().delete(
-                    calendarId=calendar_id,
-                    eventId=instance.get('id')
-                ).execute()
-                
-                # Xóa extra data
-                remove_extra(instance.get('id'))
-                
-            except Exception as e:
-                print(f"⚠️ Failed to delete instance {instance.get('id')}: {e}")
-        
-        return len(instances_to_delete)
-        
-    except Exception as e:
-        print(f"❌ Error deleting following instances: {e}")
-        return 0
-
-def delete_following_instances_google_native(master_event_id, calendar_id, instance_start):
-    """
-    Dùng Google Calendar instances API để xóa các instances sau
-    """
-    try:
-        print(f"🗑️ Using Google Calendar instances API")
-        
-        # 1. Lấy tất cả instances của master
-        instances_response = calendar_service.events().instances(
-            calendarId=calendar_id,
-            eventId=master_event_id,
-            timeMin=instance_start,  # Lấy từ instance này trở đi
-            showDeleted=False,
-            maxResults=2500
-        ).execute()
-        
-        instances = instances_response.get('items', [])
-        print(f"📊 Found {len(instances)} instances from Google Calendar API")
-        
-        # 2. Xóa từng instance (bắt đầu từ instance hiện tại)
-        deleted_count = 0
-        for instance in instances:
-            instance_id = instance.get('id')
-            try:
-                calendar_service.events().delete(
-                    calendarId=calendar_id,
-                    eventId=instance_id,
-                    sendUpdates='all'
-                ).execute()
-                
-                remove_extra(instance_id)
-                deleted_count += 1
-                print(f"✅ Deleted instance: {instance_id}")
-                
-            except Exception as e:
-                print(f"⚠️ Failed to delete instance {instance_id}: {e}")
-        
-        print(f"🎯 Total {deleted_count} instances deleted via Google Calendar API")
-        return deleted_count
-        
-    except Exception as e:
-        print(f"❌ Google Calendar instances API error: {e}")
-        return 0
 # ----------------- DELETE -----------------
 def delete_event(event_id, delete_mode="this"):
     """

@@ -1,4 +1,3 @@
-import React from "react";
 import AdminSchedule from "./pages/AdminSchedule";
 
 function App() {

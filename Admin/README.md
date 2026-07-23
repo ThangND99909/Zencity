@@ -24,7 +24,6 @@ project/
 │ ├─ app.py # FastAPI backend
 │ ├─ google_calendar.py # Wrapper for Google Calendar API
 │ ├─ calendar_crud.py
-│ ├─ calendar_utils.py
 │ ├─ check_conflict.py
 │ ├─ recurrence_helper.py
 │ ├─ recurrence_utils.py

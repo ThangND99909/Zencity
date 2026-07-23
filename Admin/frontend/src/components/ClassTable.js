@@ -1,10 +1,25 @@
 // frontend/src/components/ClassTable.js
-import React, { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import styles from "./ClassTable.module.css";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
 import { getPrograms } from "../services/api";
+import DeleteConfirmationModal from "./DeleteConfirmationModal";
+
+const ALL_PROGRAMS = "__all_programs__";
+
+const getProgramHeaderStyle = (programName = "") => {
+  const hash = Array.from(programName).reduce(
+    (value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0,
+    0
+  );
+  const hue = hash % 360;
+  return {
+    "--program-color-start": `hsl(${hue}, 62%, 30%)`,
+    "--program-color-end": `hsl(${(hue + 24) % 360}, 68%, 48%)`
+  };
+};
 
 // Modal component để hiển thị chi tiết sự kiện lặp lại
 const RecurrenceModal = ({ events, onClose }) => {
@@ -115,13 +130,16 @@ const RecurrenceModal = ({ events, onClose }) => {
   );
 };
 
-export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }) {
+export default function ClassTable({ classes, onDelete, calendarFilter }) {
   const [copiedItem, setCopiedItem] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [selectedRecurringEvents, setSelectedRecurringEvents] = useState(null);
+  const [eventToDelete, setEventToDelete] = useState(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [programsMap, setProgramsMap] = useState({}); // Map programId -> programName
+  const viewMode = "schedule";
+  const [selectedProgram, setSelectedProgram] = useState(ALL_PROGRAMS);
 
   // ✅ LOAD PROGRAMS TO MAP ID TO NAME
   useEffect(() => {
@@ -141,33 +159,32 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
   }, []);
 
   // ✅ HELPER FUNCTION: GET PROGRAM NAME FROM ID
-  const getProgramName = (programId) => {
+  const getProgramName = useCallback((programId) => {
     if (!programId) return "N/A";
     return programsMap[programId] || programId; // Return name if found, otherwise return ID
-  };
+  }, [programsMap]);
 
   // --- Bộ lọc ---
-  const [filters, setFilters] = useState({
+  const [filters] = useState({
     name: "",
     program: "",
     teacher: "",
     calendar: "all"
   });
 
-  const handleFilterChange = (e) => {
-    setFilters({ ...filters, [e.target.name]: e.target.value });
-    setCurrentPage(1); // Reset về trang 1 khi filter
-  };
-
-  const handleClearFilter = (name) => {
-    setFilters({ ...filters, [name]: "" });
-    setCurrentPage(1);
-  };
-
   // Trích xuất thông tin từ description và các field trực tiếp
-  const extractClassInfo = (cls) => {
+  const extractClassInfo = useCallback((cls) => {
     const rawDescription = cls.description || "";
     const { zoomLink, meetingId, passcode, program, teacher, classname } = parseZoomInfo(rawDescription);
+    const plainDescription = rawDescription
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<\/?[^>]+(>|$)/g, "")
+      .trim();
+    const roomLine = plainDescription
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => /^Room\b/i.test(line));
 
     const calendarSource = cls._calendar_source || 
                           (cls.calendar_id ? (cls.calendar_id.includes('even') ? 'even' : 'odd') : 'odd');
@@ -191,6 +208,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
         "",
       meeting_id: cls.meeting_id || meetingId || "",
       passcode: cls.passcode || passcode || "",
+      zoom_room: cls.zoom_room || cls.room || roomLine || cls.summary || "",
       program: getProgramName(cls.program || program || ""),
       calendar_source: calendarInfo.source,
       calendar_name: calendarInfo.name,
@@ -200,7 +218,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
       recurringEventId: cls.recurringEventId,
       recurrence_description: cls.recurrence_description || ""
     };
-  };
+  }, [getProgramName]);
 
   // ================= TUẦN HIỆN TẠI =================
   const weekBounds = useMemo(() => {
@@ -222,19 +240,30 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     return `${fmt(weekBounds.start)} – ${fmt(weekBounds.end)}`;
   }, [weekBounds]);
 
+  const weekDays = useMemo(() => {
+    const dayNames = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"];
+    return dayNames.map((name, index) => {
+      const date = new Date(weekBounds.start);
+      date.setDate(weekBounds.start.getDate() + index);
+      return { name, date };
+    });
+  }, [weekBounds]);
+
+  const weekClasses = useMemo(() => {
+    return classes.filter((cls) => {
+      if (cls.status === "cancelled") return false;
+      const clsStart = new Date(cls.start?.dateTime || cls.start);
+      return clsStart >= weekBounds.start && clsStart <= weekBounds.end;
+    });
+  }, [classes, weekBounds]);
+
   // ================= NHÓM CÁC SỰ KIỆN LẶP LẠI =================
   const groupedClasses = useMemo(() => {
     // Nhóm các sự kiện theo recurringEventId
     const recurringGroups = new Map();
     const nonRecurring = [];
     
-    classes.forEach(cls => {
-      if (cls.status === "cancelled") return;
-
-      // Lọc theo tuần hiện tại
-      const clsStart = new Date(cls.start?.dateTime || cls.start);
-      if (clsStart < weekBounds.start || clsStart > weekBounds.end) return;
-
+    weekClasses.forEach(cls => {
       if (cls.recurringEventId) {
         if (!recurringGroups.has(cls.recurringEventId)) {
           recurringGroups.set(cls.recurringEventId, []);
@@ -246,7 +275,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     });
     
     // Tạo đại diện cho mỗi nhóm (lấy event đầu tiên)
-    const recurringRepresentatives = Array.from(recurringGroups.entries()).map(([recurringId, events]) => {
+    const recurringRepresentatives = Array.from(recurringGroups.values()).map((events) => {
       // Sắp xếp events theo thời gian
       events.sort((a, b) => {
         const timeA = new Date(a.start?.dateTime || a.start).getTime();
@@ -268,7 +297,105 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     
     // Kết hợp non-recurring và recurring representatives
     return [...nonRecurring, ...recurringRepresentatives];
-  }, [classes, weekBounds]);
+  }, [weekClasses]);
+
+  const programOptions = useMemo(() => {
+    const activeNames = new Set();
+    weekClasses.forEach((cls) => {
+      const info = extractClassInfo(cls);
+      if (info.program && info.program !== "N/A") activeNames.add(info.program);
+    });
+
+    const sortNames = (names) => names.sort((a, b) =>
+      a.localeCompare(b, "vi", { sensitivity: "base" })
+    );
+    const activePrograms = sortNames(Array.from(activeNames));
+    const inactivePrograms = sortNames(
+      Array.from(new Set(Object.values(programsMap))).filter((name) => name && !activeNames.has(name))
+    );
+    return [...activePrograms, ...inactivePrograms];
+  }, [programsMap, weekClasses, extractClassInfo]);
+
+  useEffect(() => {
+    if (programOptions.length === 0) {
+      setSelectedProgram(ALL_PROGRAMS);
+      return;
+    }
+    if (!selectedProgram || (selectedProgram !== ALL_PROGRAMS && !programOptions.includes(selectedProgram))) {
+      setSelectedProgram(programOptions[0]);
+    }
+  }, [programOptions, selectedProgram]);
+
+  const scheduleClasses = useMemo(() => {
+    return weekClasses.filter((cls) => {
+      if (calendarFilter && calendarFilter !== "both") {
+        const calendarSource = cls._calendar_source || "odd";
+        if (calendarFilter !== calendarSource) return false;
+      }
+
+      const info = extractClassInfo(cls);
+      if (selectedProgram && selectedProgram !== ALL_PROGRAMS && info.program !== selectedProgram) return false;
+
+      const matchName = (cls.summary || "").toLowerCase().includes(filters.name.toLowerCase());
+      const matchProgram = (info.program || "").toLowerCase().includes(filters.program.toLowerCase());
+      const matchTeacher = (info.teacher || "").toLowerCase().includes(filters.teacher.toLowerCase());
+      const matchCalendar = filters.calendar === "all" || info.calendar_source === filters.calendar;
+      return matchName && matchProgram && matchTeacher && matchCalendar;
+    });
+  }, [weekClasses, selectedProgram, filters, calendarFilter, extractClassInfo]);
+
+  const scheduleRows = useMemo(() => {
+    const rows = new Map();
+
+    scheduleClasses.forEach((cls) => {
+      const info = extractClassInfo(cls);
+      const rowKey = [
+        info.program,
+        info.classname,
+        cls.summary || "",
+        info.meeting_id || info.zoom_link || cls.id
+      ].join("::");
+
+      if (!rows.has(rowKey)) {
+        rows.set(rowKey, {
+          key: rowKey,
+          summary: cls.summary || "",
+          info,
+          eventsByDay: Array.from({ length: 7 }, () => [])
+        });
+      }
+
+      const start = new Date(cls.start?.dateTime || cls.start);
+      const dayIndex = (start.getDay() + 6) % 7;
+      rows.get(rowKey).eventsByDay[dayIndex].push(cls);
+    });
+
+    return Array.from(rows.values())
+      .map((row) => ({
+        ...row,
+        eventsByDay: row.eventsByDay.map((events) => events.sort((a, b) =>
+          new Date(a.start?.dateTime || a.start) - new Date(b.start?.dateTime || b.start)
+        ))
+      }))
+      .sort((a, b) => (a.info.classname || a.summary).localeCompare(
+        b.info.classname || b.summary,
+        "vi",
+        { sensitivity: "base" }
+      ));
+  }, [scheduleClasses, extractClassInfo]);
+
+  const scheduleSections = useMemo(() => {
+    if (selectedProgram !== ALL_PROGRAMS) {
+      return [{ program: selectedProgram, rows: scheduleRows }];
+    }
+
+    const rowsByProgram = new Map(programOptions.map((program) => [program, []]));
+    scheduleRows.forEach((row) => {
+      if (!rowsByProgram.has(row.info.program)) rowsByProgram.set(row.info.program, []);
+      rowsByProgram.get(row.info.program).push(row);
+    });
+    return Array.from(rowsByProgram, ([program, rows]) => ({ program, rows }));
+  }, [selectedProgram, programOptions, scheduleRows]);
 
   // ================= Lọc lớp =================
   const filteredClasses = useMemo(() => {
@@ -299,7 +426,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     });
 
     return result;
-  }, [groupedClasses, filters, calendarFilter]);
+  }, [groupedClasses, filters, calendarFilter, extractClassInfo]);
 
   // ================= PHÂN TRANG =================
   const paginatedClasses = useMemo(() => {
@@ -335,6 +462,25 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
     if (cls._isRecurringGroup && cls._recurringEvents) {
       setSelectedRecurringEvents(cls._recurringEvents);
     }
+  };
+
+  const handleDeleteClick = (event, eventInfo, e) => {
+    e.stopPropagation();
+    setEventToDelete({
+      ...event,
+      name: event.name || event.summary || eventInfo.classname,
+      teacher: eventInfo.teacher
+    });
+  };
+
+  const handleConfirmDelete = async (deleteMode = "this") => {
+    if (!eventToDelete?.id) return;
+    await onDelete?.({
+      ...eventToDelete,
+      deleteMode,
+      _confirmed: true
+    });
+    setEventToDelete(null);
   };
 
   // ================= Export Excel =================
@@ -440,113 +586,179 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
       recurring: recurringCount,
       totalInstances: totalInstances
     };
-  }, [filteredClasses, groupedClasses]);
+  }, [filteredClasses, groupedClasses, extractClassInfo]);
 
   return (
     <div className={styles.tableContainer}>
-      {/* ================= WEEK NAVIGATION ================= */}
-      <div className={styles.weekNavBar}>
-        <button
-          className={styles.weekNavBtn}
-          onClick={() => { setWeekOffset(o => o - 1); setCurrentPage(1); }}
-        >
-          ← Tuần trước
-        </button>
-        <button
-          className={`${styles.weekNavBtn} ${weekOffset === 0 ? styles.weekTodayActive : ""}`}
-          onClick={() => { setWeekOffset(0); setCurrentPage(1); }}
-        >
-          Tuần này
-        </button>
-        <span className={styles.weekRange}>📅 {weekLabel}</span>
-        <button
-          className={styles.weekNavBtn}
-          onClick={() => { setWeekOffset(o => o + 1); setCurrentPage(1); }}
-        >
-          Tuần sau →
-        </button>
-      </div>
-      {/* ================= STATS & FILTERS ================= */}
-      <div className={styles.headerSection}>
-        <div className={styles.stats}>
-          {/*
-          <div className={styles.statItem}>
-            <span className={styles.statLabel}>Total groups:</span>
-            <span className={styles.statValue}>{stats.total}</span>
+      <div className={styles.viewToolbar}>
+        <div className={styles.weekNavBar}>
+          <div className={styles.weekNavLeft}>
+            <button
+              className={styles.weekNavBtn}
+              onClick={() => { setWeekOffset(o => o - 1); setCurrentPage(1); }}
+            >
+              ← Tuần trước
+            </button>
           </div>
-          <div className={styles.statItem}>
-            <span className={styles.statLabel}>Total instances:</span>
-            <span className={styles.statValue}>{stats.totalInstances}</span>
+
+          <div className={styles.weekNavCenter}>
+            <button
+              className={`${styles.weekNavBtn} ${weekOffset === 0 ? styles.weekTodayActive : ""}`}
+              onClick={() => { setWeekOffset(0); setCurrentPage(1); }}
+            >
+              Tuần này
+            </button>
+            <span className={styles.weekRange}>📅 {weekLabel}</span>
           </div>
-          <div className={styles.statItem}>
-            <span className={styles.statLabel}>Recurring groups:</span>
-            <span className={styles.statValue}>{stats.recurring}</span>
-          </div>
-          */}
-          <div className={`${styles.statItem} ${styles.statOdd}`}>
-            <span className={styles.statLabel}>📘 Odd:</span>
-            <span className={styles.statValue}>{stats.odd}</span>
-          </div>
-          <div className={`${styles.statItem} ${styles.statEven}`}>
-            <span className={styles.statLabel}>📗 Even:</span>
-            <span className={styles.statValue}>{stats.even}</span>
+
+          <div className={styles.weekNavRight}>
+            <button
+              className={styles.weekNavBtn}
+              onClick={() => { setWeekOffset(o => o + 1); setCurrentPage(1); }}
+            >
+              Tuần sau →
+            </button>
+
+            <div className={styles.weekNavDivider} />
+
+            <select
+              value={selectedProgram}
+              onChange={(e) => setSelectedProgram(e.target.value)}
+              className={styles.programSelect}
+              disabled={programOptions.length === 0}
+            >
+              {programOptions.length === 0 ? (
+                <option value="">Chưa có chương trình</option>
+              ) : (
+                <>
+                  <option value={ALL_PROGRAMS}>Tất cả chương trình</option>
+                  {programOptions.map((programName) => (
+                    <option key={programName} value={programName}>{programName}</option>
+                  ))}
+                </>
+              )}
+            </select>
           </div>
         </div>
-
-        <div className={styles.filters}>
-          <div className={styles.filterInputWrapper}>
-            <input
-              type="text"
-              name="name"
-              placeholder="Tìm theo tên lớp"
-              value={filters.name}
-              onChange={handleFilterChange}
-              className={styles.filterInput}
-            />
-            {filters.name && (
-              <button className={styles.filterClearBtn} onClick={() => handleClearFilter("name")}>✕</button>
-            )}
-          </div>
-          <div className={styles.filterInputWrapper}>
-            <input
-              type="text"
-              name="program"
-              placeholder="Tìm theo chương trình"
-              value={filters.program}
-              onChange={handleFilterChange}
-              className={styles.filterInput}
-            />
-            {filters.program && (
-              <button className={styles.filterClearBtn} onClick={() => handleClearFilter("program")}>✕</button>
-            )}
-          </div>
-          <div className={styles.filterInputWrapper}>
-            <input
-              type="text"
-              name="teacher"
-              placeholder="Tìm theo giáo viên"
-              value={filters.teacher}
-              onChange={handleFilterChange}
-              className={styles.filterInput}
-            />
-            {filters.teacher && (
-              <button className={styles.filterClearBtn} onClick={() => handleClearFilter("teacher")}>✕</button>
-            )}
-          </div>
-          <select
-            name="calendar"
-            value={filters.calendar}
-            onChange={handleFilterChange}
-            className={styles.filterSelect}
-          >
-            <option value="all">Tất cả Calendar</option>
-            <option value="odd">📘 Calendar Lẻ (Giờ lẻ: 1,3,5...)</option>
-            <option value="even">📗 Calendar Chẵn (Giờ chẵn: 2,4,6...)</option>
-          </select>
-        </div>
       </div>
-
       {/* ================= TABLE ================= */}
+      {viewMode === "schedule" ? (
+        <div className={styles.scheduleBoards}>
+        {scheduleSections.map((scheduleSection) => (
+        <section
+          key={scheduleSection.program || "empty"}
+          className={styles.scheduleBoard}
+          style={getProgramHeaderStyle(scheduleSection.program)}
+        >
+          <div className={styles.scheduleBoardHeader}>
+            <div className={styles.scheduleProgramTitle}>
+              <h3>{scheduleSection.program || "Chưa có chương trình"}</h3>
+            </div>
+          </div>
+
+          <div className={styles.scheduleTableWrapper}>
+            <table className={styles.scheduleTable}>
+              <thead>
+                <tr>
+                  <th className={styles.scheduleClassColumn}>Lớp</th>
+                  <th className={styles.scheduleZoomColumn}>Zoom ID</th>
+                  {weekDays.map((day) => (
+                    <th key={day.name} className={styles.scheduleDayColumn}>
+                      <span>{day.name}</span>
+                      <small>{day.date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}</small>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {scheduleSection.rows.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className={styles.scheduleEmpty}>
+                      <span>📭</span>
+                      Không có lớp thuộc chương trình này trong tuần đã chọn.
+                    </td>
+                  </tr>
+                ) : (
+                  scheduleSection.rows.map((row) => (
+                    <tr key={row.key}>
+                      <td className={styles.scheduleClassCell}>
+                        <strong>{row.info.classname !== "N/A" ? row.info.classname : row.summary}</strong>
+                      </td>
+                      <td className={styles.scheduleZoomCell}>
+                        {row.info.zoom_room && (
+                          <strong className={styles.scheduleZoomRoom}>{row.info.zoom_room}</strong>
+                        )}
+                        {row.info.meeting_id ? (
+                          <button
+                            type="button"
+                            className={styles.scheduleCopyValue}
+                            onClick={(e) => handleCopy(row.key, row.info.meeting_id, "schedule-meeting", e)}
+                            title="Copy Meeting ID"
+                          >
+                            <span>Zoom ID: {row.info.meeting_id}</span>
+                            <span>{copiedItem === `${row.key}-schedule-meeting` ? "✓" : "📋"}</span>
+                          </button>
+                        ) : (
+                          <span className={styles.naText}>N/A</span>
+                        )}
+                        {row.info.passcode && <small>Pass: {row.info.passcode}</small>}
+                        {row.info.zoom_link && (
+                          <button
+                            type="button"
+                            className={styles.scheduleZoomLink}
+                            onClick={(e) => handleOpenLink(row.info.zoom_link, e)}
+                            title={row.info.zoom_link}
+                          >
+                            <span>Zoom link:</span>
+                            {row.info.zoom_link}
+                          </button>
+                        )}
+                      </td>
+                      {row.eventsByDay.map((events, dayIndex) => (
+                        <td key={`${row.key}-${dayIndex}`} className={styles.scheduleDayCell}>
+                          {events.length > 0 && (
+                            <div className={styles.scheduleDayEvents}>
+                              {events.map((event) => {
+                                const eventInfo = extractClassInfo(event);
+                                const start = new Date(event.start?.dateTime || event.start);
+                                const end = new Date(event.end?.dateTime || event.end);
+                                const timeOptions = { hour: "2-digit", minute: "2-digit", hour12: false };
+                                return (
+                                  <div
+                                    key={event.id}
+                                    className={`${styles.scheduleEvent} ${
+                                      eventInfo.calendar_source === "odd" ? styles.scheduleEventOdd : styles.scheduleEventEven
+                                    }`}
+                                    title={`${event.summary || eventInfo.classname}\n${formatDateTime(event.start?.dateTime || event.start)}`}
+                                  >
+                                    <strong>
+                                      {start.toLocaleTimeString("vi-VN", timeOptions)} – {end.toLocaleTimeString("vi-VN", timeOptions)}
+                                    </strong>
+                                    <span>{eventInfo.teacher !== "N/A" ? eventInfo.teacher : "Chưa có giáo viên"}</span>
+                                    <button
+                                      type="button"
+                                      className={styles.scheduleDeleteButton}
+                                      onClick={(e) => handleDeleteClick(event, eventInfo, e)}
+                                    >
+                                      XÓA
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        ))}
+        </div>
+      ) : (
       <div className={styles.tableWrapper}>
         <table className={styles.table}>
           <thead>
@@ -722,9 +934,10 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
           </tbody>
         </table>
       </div>
+      )}
 
       {/* ================= PHÂN TRANG ================= */}
-      <div className={styles.pagination}>
+      {viewMode === "list" && <div className={styles.pagination}>
         <div className={styles.paginationInfo}>
           Hiển thị {paginatedClasses.length} / {filteredClasses.length} nhóm sự kiện
         </div>
@@ -761,7 +974,7 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
             →
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* ================= FOOTER & EXPORT ================= */}
       <div className={styles.footer}>
@@ -790,6 +1003,15 @@ export default function ClassTable({ classes, onEdit, onDelete, calendarFilter }
         <RecurrenceModal 
           events={selectedRecurringEvents}
           onClose={() => setSelectedRecurringEvents(null)}
+        />
+      )}
+
+      {eventToDelete && (
+        <DeleteConfirmationModal
+          event={eventToDelete}
+          isRecurring={Boolean(eventToDelete.recurrence || eventToDelete.recurringEventId)}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setEventToDelete(null)}
         />
       )}
     </div>

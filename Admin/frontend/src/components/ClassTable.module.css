@@ -23,15 +23,43 @@
 
 /* ============ WEEK NAVIGATION BAR ============ */
 .weekNavBar {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+  padding: 0;
+  background: transparent;
+  margin: 0;
+}
+
+.weekNavLeft {
   display: flex;
   align-items: center;
+  justify-self: start;
+  gap: 8px;
+}
+
+.weekNavCenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  gap: 12px;
+}
+
+.weekNavRight {
+  display: flex;
+  align-items: center;
+  justify-self: end;
   gap: 10px;
-  padding: 10px 16px;
-  background: white;
-  border-radius: 10px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  flex-wrap: wrap;
+}
+
+.weekNavDivider {
+  width: 1px;
+  height: 24px;
+  background: #dadce0;
+  margin: 0 4px;
 }
 
 .weekNavBtn {
@@ -59,126 +87,331 @@
 }
 
 .weekRange {
-  flex: 1;
   text-align: center;
   font-size: 14px;
   font-weight: 600;
   color: #202124;
-  padding: 0 8px;
+  padding: 0;
+  white-space: nowrap;
 }
 
-/* ============ HEADER SECTION ============ */
-.headerSection {
+/* ============ VIEW & PROGRAM NAVIGATION ============ */
+.viewToolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding: 16px;
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.stats {
-  display: flex;
   gap: 16px;
-  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: #ffffff;
+  border: 1px solid #e8edf3;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.04);
 }
 
-.statItem {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #f8f9fa;
+.programSelect {
+  min-width: 280px;
+  max-width: 420px;
+  padding: 9px 34px 9px 12px;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
-  border: 1px solid #e9ecef;
-  transition: all 0.3s ease;
-}
-
-.statItem:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.statOdd {
-  border-left: 4px solid #1a73e8;
-  background: linear-gradient(135deg, #e8f0fe 0%, #ffffff 100%);
-}
-
-.statEven {
-  border-left: 4px solid #34a853;
-  background: linear-gradient(135deg, #e6f4ea 0%, #ffffff 100%);
-}
-
-.statLabel {
-  font-weight: 500;
-  color: #495057;
+  background: #ffffff;
+  color: #0f172a;
   font-size: 14px;
+  font-weight: 600;
+  outline: none;
 }
 
-.statValue {
-  font-weight: 700;
-  font-size: 18px;
-  color: #212529;
+.programSelect:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
 }
 
-/* ============ FILTERS ============ */
-.filters {
+/* ============ EXCEL-STYLE WEEK SCHEDULE ============ */
+.scheduleBoards {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 22px;
 }
 
-.filterInputWrapper {
-  position: relative;
-  display: inline-flex;
+.scheduleBoard {
+  overflow: hidden;
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+
+.scheduleBoardHeader {
+  display: flex;
   align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 18px 20px;
+  color: #ffffff;
+  background: linear-gradient(
+    115deg,
+    var(--program-color-start, #123f73) 0%,
+    var(--program-color-end, #2879b9) 100%
+  );
 }
 
-.filterClearBtn {
-  position: absolute;
-  right: 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #9aa0a6;
+.scheduleProgramTitle {
+  width: 100%;
+  text-align: center;
+}
+
+.scheduleBoardHeader h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.scheduleTableWrapper {
+  overflow-x: auto;
+}
+
+.scheduleTable {
+  width: 100%;
+  min-width: 1550px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.scheduleTable th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 12px 10px;
+  color: #243b53;
+  background: #eaf2f8;
+  border-right: 1px solid #cfdae5;
+  border-bottom: 2px solid #9fb5c9;
+  text-align: center;
+}
+
+.scheduleTable th span,
+.scheduleTable th small {
+  display: block;
+}
+
+.scheduleTable th small {
+  margin-top: 3px;
+  color: #627d98;
+  font-weight: 500;
+}
+
+.scheduleTable td {
+  padding: 10px;
+  vertical-align: top;
+  background: #ffffff;
+  border-right: 1px solid #dfe7ef;
+  border-bottom: 1px solid #dfe7ef;
+}
+
+.scheduleTable tbody tr:nth-child(even) td {
+  background: #fbfdff;
+}
+
+.scheduleTable tbody tr:hover td {
+  background: #f7fbff;
+}
+
+.scheduleClassColumn {
+  width: 190px;
+  left: 0;
+  z-index: 5 !important;
+}
+
+.scheduleZoomColumn {
+  width: 300px;
+}
+
+.scheduleDayColumn {
+  width: 150px;
+}
+
+.scheduleClassCell {
+  position: sticky;
+  z-index: 2;
+}
+
+.scheduleClassCell {
+  left: 0;
+  border-left: 4px solid #1a5a99;
+}
+
+.scheduleZoomCell {
+  box-shadow: 4px 0 8px rgba(15, 23, 42, 0.05);
+}
+
+.scheduleClassCell strong,
+.scheduleClassCell span,
+.scheduleClassCell small,
+.scheduleZoomCell small {
+  display: block;
+}
+
+.scheduleClassCell strong {
+  color: #102a43;
+  line-height: 1.35;
+}
+
+.scheduleClassCell span {
+  margin-top: 5px;
+  color: #52667a;
   font-size: 12px;
-  padding: 2px 4px;
-  border-radius: 50%;
-  line-height: 1;
+  line-height: 1.35;
+}
+
+.scheduleClassCell small {
+  margin-top: 9px;
+  font-weight: 600;
+}
+
+.scheduleCopyValue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #d5e0ea;
+  border-radius: 6px;
+  background: #f6f9fc;
+  color: #243b53;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.scheduleZoomRoom {
+  display: block;
+  margin-bottom: 8px;
+  color: #102a43;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.scheduleZoomCell small {
+  margin-top: 6px;
+  color: #7c5d11;
+}
+
+.scheduleZoomLink {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1a73e8;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.scheduleZoomLink span {
+  display: block;
+  color: #52667a;
+  font-weight: 500;
+}
+
+.scheduleDayCell {
+  height: 1px;
+  min-height: 100px;
+  padding: 0 !important;
+}
+
+.scheduleDayEvents {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 100px;
+}
+
+.scheduleEvent {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 82px;
+  margin: 0;
+  padding: 12px 9px;
+  border-radius: 0;
+  border-left: 4px solid;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.scheduleEvent + .scheduleEvent {
+  border-top: 1px solid rgba(98, 125, 152, 0.2);
+}
+
+.scheduleEvent strong {
+  color: #102a43;
+  font-size: 12px;
+}
+
+.scheduleEvent span {
+  color: #334e68;
+  font-weight: 600;
+}
+
+.scheduleDeleteButton {
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
   transition: color 0.2s ease, background 0.2s ease;
 }
 
-.filterClearBtn:hover {
-  color: #5f6368;
-  background: #e8eaed;
+.scheduleDeleteButton:hover {
+  color: #ffffff;
+  background: #d92d20;
 }
 
-.filterInputWrapper .filterInput {
-  padding-right: 30px;
+.scheduleEvent small {
+  overflow: hidden;
+  color: #627d98;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.filterInput, .filterSelect {
-  padding: 10px 16px;
-  border: 2px solid #e9ecef;
-  border-radius: 8px;
-  font-size: 14px;
-  transition: all 0.3s ease;
-  background: white;
-  min-width: 200px;
+.scheduleEventOdd {
+  border-left-color: #1a73e8;
+  background: #eaf2ff;
 }
 
-
-.filterInput:focus, .filterSelect:focus {
-  outline: none;
-  border-color: #1a73e8;
-  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.1);
+.scheduleEventEven {
+  border-left-color: #34a853;
+  background: #eaf7ee;
 }
 
-.filterInput::placeholder {
-  color: #6c757d;
-  opacity: 0.7;
+.scheduleEmpty {
+  height: 180px;
+  color: #718096;
+  text-align: center;
+  vertical-align: middle !important;
+}
+
+.scheduleEmpty span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 26px;
 }
 
 /* ============ TABLE STYLES ============ */
@@ -281,18 +514,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.recurrenceIcon {
-  color: #ff6b35;
-  font-size: 16px;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% { opacity: 0.6; }
-  50% { opacity: 1; }
-  100% { opacity: 0.6; }
 }
 
 /* ============ ZOOM LINK CONTAINER ============ */
@@ -422,17 +643,6 @@
   white-space: nowrap;
 }
 
-.recurrenceIconSmall {
-  color: #ff6b35;
-  font-size: 14px;
-  animation: spin 3s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
 /* ============ FOOTER ============ */
 .footer {
   display: flex;
@@ -517,22 +727,6 @@
 }
 
 /* ============ RESPONSIVE DESIGN ============ */
-@media (max-width: 1200px) {
-  .headerSection {
-    flex-direction: column;
-    gap: 16px;
-  }
-  
-  .filters {
-    width: 100%;
-  }
-  
-  .filterInput, .filterSelect {
-    flex: 1;
-    min-width: 150px;
-  }
-}
-
 @media (max-width: 992px) {
   .tableContainer {
     padding: 16px;
@@ -549,6 +743,16 @@
   .timeCell {
     min-width: 160px;
   }
+
+  .viewToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .programSelect {
+    flex: 1;
+    max-width: none;
+  }
 }
 
 @media (max-width: 768px) {
@@ -556,27 +760,34 @@
     padding: 12px;
     margin: 12px 0;
   }
+
+  .weekNavBar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .weekNavCenter {
+    order: -1;
+    flex-wrap: wrap;
+  }
+
+  .weekNavLeft,
+  .weekNavRight {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .weekNavRight {
+    flex-wrap: wrap;
+  }
+
+  .weekNavDivider {
+    display: none;
+  }
   
-  .headerSection, .footer {
+  .footer {
     padding: 12px;
-  }
-  
-  .stats {
-    flex-direction: column;
-    width: 100%;
-  }
-  
-  .statItem {
-    width: 100%;
-    justify-content: space-between;
-  }
-  
-  .filters {
-    flex-direction: column;
-  }
-  
-  .filterInput, .filterSelect {
-    width: 100%;
   }
   
   .tableWrapper {
@@ -586,7 +797,17 @@
   .table {
     min-width: 800px;
   }
-  
+
+  .programSelect {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .scheduleBoardHeader {
+    align-items: center;
+    flex-direction: column;
+  }
+
   .zoomLinkContainer {
     flex-direction: column;
     align-items: flex-start;
@@ -622,18 +843,6 @@
 
 .tableWrapper::-webkit-scrollbar-thumb:hover {
   background: #6c757d;
-}
-
-/* ============ LOADING ANIMATION ============ */
-@keyframes shimmer {
-  0% { background-position: -1000px 0; }
-  100% { background-position: 1000px 0; }
-}
-
-.loading-row {
-  animation: shimmer 2s infinite linear;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 1000px 100%;
 }
 
 /* frontend/src/components/ClassTable.module.css */
@@ -858,25 +1067,4 @@
 .recurrenceRange {
   font-size: 0.75rem;
   color: #718096;
-}
-
-/* Stats updates */
-.statItem {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: #f7fafc;
-  border-radius: 20px;
-  font-size: 0.85rem;
-}
-
-.statLabel {
-  color: #718096;
-  font-weight: 500;
-}
-
-.statValue {
-  font-weight: 600;
-  color: #2d3748;
 }

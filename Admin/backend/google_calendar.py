@@ -2,6 +2,8 @@ import os
 import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import google_auth_httplib2
+import httplib2
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
@@ -24,6 +26,14 @@ else:
 # 🔹 Khởi tạo Calendar service
 calendar_service = build('calendar', 'v3', credentials=credentials)
 
+
+def create_calendar_http(timeout=30):
+    """Create an isolated authorized transport for one worker thread."""
+    return google_auth_httplib2.AuthorizedHttp(
+        credentials,
+        http=httplib2.Http(timeout=timeout)
+    )
+
 # ⚡ Warm-up (tùy chọn, để kiểm tra kết nối Google API)
 try:
     calendar_service.calendarList().list(maxResults=1).execute()
@@ -32,21 +42,13 @@ except Exception as e:
     print(f"⚠️ Warm-up failed: {e}")
 
 # ========== ĐỊNH NGHĨA 2 CALENDAR ==========
-#CALENDAR_ODD = '2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com'
-#CALENDAR_EVEN = '830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com'
-
-CALENDAR_ODD = 'thanhhuyphan39@gmail.com'
-CALENDAR_EVEN = 'cbb3ef13c933e582c8af5eb8d198540200e7e26bf367639a062e1e16b9d4b115@group.calendar.google.com'
+CALENDAR_ODD = '2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com'
+CALENDAR_EVEN = '830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com'
 
 CALENDARS = {
     'odd': CALENDAR_ODD,
     'even': CALENDAR_EVEN,
     'default': CALENDAR_ODD
-}
-
-CALENDAR_TYPES = {
-    CALENDAR_ODD: 'odd',
-    CALENDAR_EVEN: 'even'
 }
 
 print("✅ Google Calendar API initialized")

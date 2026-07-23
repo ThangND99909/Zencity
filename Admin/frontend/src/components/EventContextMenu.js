@@ -1,5 +1,5 @@
 // frontend/src/components/EventContextMenu.js
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import styles from "./EventContextMenu.module.css";
 
 export default function EventContextMenu({
@@ -8,7 +8,6 @@ export default function EventContextMenu({
   isRecurring = false,
   onClose,
   onDelete,
-  onEdit,
   onViewDetails
 }) {
   const menuRef = useRef(null);
@@ -33,11 +32,6 @@ export default function EventContextMenu({
 
   const handleDeleteClick = () => {
     onDelete(event);
-    onClose();
-  };
-
-  const handleEditClick = () => {
-    onEdit(event);
     onClose();
   };
 
@@ -71,13 +65,6 @@ export default function EventContextMenu({
       >
         👁️ Xem chi tiết
       </div>
-      
-      {/*<div 
-        className={styles.contextMenuItem}
-        onClick={handleEditClick}
-      >
-        ✏️ Chỉnh sửa
-      </div>*/}
       
       <div 
         className={`${styles.contextMenuItem} ${styles.deleteItem}`}

@@ -1,9 +1,7 @@
 # backend/program_crud.py
 import json
-import os
 from pathlib import Path
 from typing import List, Optional
-import uuid
 
 # Path to programs.json
 DATA_DIR = Path(__file__).parent / "data"
@@ -111,9 +109,3 @@ def delete_program(program_id: str) -> bool:
         return False  # Không tìm thấy chương trình
     
     return save_programs(filtered_programs)
-
-
-def get_program_by_id(program_id: str) -> Optional[dict]:
-    """Lấy chương trình theo ID"""
-    programs = load_programs()
-    return next((p for p in programs if p["id"] == program_id), None)

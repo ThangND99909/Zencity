@@ -19,8 +19,12 @@ const safeFetch = async (fn, retries = 3, delay = 5000) => {
     }
   }
 };
-//const API_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 const API_URL = process.env.REACT_APP_BACKEND_URL || "https://zencity-backend.onrender.com";
+
+const createRequestId = () => {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+};
 
 // Tạo axios instance với config mặc định
 const apiClient = axios.create({
@@ -69,11 +73,27 @@ apiClient.interceptors.response.use(
   }
 );
 
-export const getClasses = async (calendarId = "primary") => {
+const getDefaultCalendarWindow = () => {
+  const now = new Date();
+  const timeMin = new Date(now);
+  const timeMax = new Date(now);
+  timeMin.setDate(timeMin.getDate() - 1);
+  timeMin.setHours(0, 0, 0, 0);
+  // Google treats timeMax as exclusive, so use midnight after the last visible day.
+  timeMax.setDate(timeMax.getDate() + 61);
+  timeMax.setHours(0, 0, 0, 0);
+  return { timeMin: timeMin.toISOString(), timeMax: timeMax.toISOString() };
+};
+
+export const getClasses = async (calendarType = "both", eventWindow = getDefaultCalendarWindow()) => {
   try {
     return await safeFetch(async () => {
     const res = await apiClient.get(`/classes`, {
-      params: { calendar_id: calendarId, include_recurrence: true},
+      params: {
+        calendar_type: calendarType,
+        time_min: eventWindow.timeMin,
+        time_max: eventWindow.timeMax
+      },
     });
     return res.data;
     });
@@ -84,11 +104,16 @@ export const getClasses = async (calendarId = "primary") => {
 };
 
 export const addClass = async (data) => {
+  const requestId = data.request_id || createRequestId();
+  const requestData = { ...data, request_id: requestId };
+
   try {
     return await safeFetch(async () => {
-    console.log("📤 Sending class data to backend:", data);
-    const res = await apiClient.post(`/classes`, data);
-    return res.data;
+      console.log("📤 Sending class data to backend:", requestData);
+      const res = await apiClient.post(`/classes`, requestData, {
+        headers: { "Idempotency-Key": requestId }
+      });
+      return res.data;
     });
   } catch (error) {
     console.error("Add class error:", error);
@@ -194,19 +219,6 @@ export const checkScheduleConflict = async (teacher, start, end, excludeEventId 
   }
 };
 
-// Health check function để test connection
-export const healthCheck = async () => {
-  try {
-    return await safeFetch(async () => {
-    const res = await apiClient.get(`/health`);
-    return res.data;
-    });
-  } catch (error) {
-    console.error("Health check error:", error);
-    throw new Error(`Backend connection failed: ${error.message}`);
-  }
-};
-
 export const getEvent = async (eventId, calendarId = "primary") => {
   try {
     const res = await apiClient.get(`/classes/${eventId}`, {  // ✅ DÙNG /classes/ thay vì /events/
@@ -216,28 +228,6 @@ export const getEvent = async (eventId, calendarId = "primary") => {
   } catch (error) {
     console.error("Get event error:", error);
     throw new Error(`Failed to fetch event: ${error.message}`);
-  }
-};
-
-// 🆕 HÀM SUGGEST SIMPLE (KHÔNG AI) - nếu bạn cần giữ tính năng này
-export const suggestClass = async (teacher, duration_hours) => {
-  try {
-    // Simple fallback: đề xuất ngày mai 9:00 AM
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(9, 0, 0, 0);
-    
-    const endTime = new Date(tomorrow);
-    endTime.setHours(tomorrow.getHours() + duration_hours);
-    
-    return {
-      start: tomorrow.toISOString(),
-      end: endTime.toISOString(),
-      note: "Manual scheduling (AI disabled)"
-    };
-  } catch (error) {
-    console.error("Suggest class error:", error);
-    throw new Error(`Scheduling failed: ${error.message}`);
   }
 };
 

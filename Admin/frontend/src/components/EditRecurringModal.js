@@ -1,12 +1,11 @@
 // frontend/src/components/EditRecurringModal.js
-import React, { useState } from "react";
+import { useState } from "react";
 import styles from "./EditRecurringModal.module.css";
 
 export default function EditRecurringModal({
   event,
   onConfirm,
-  onCancel,
-  isEditing = false
+  onCancel
 }) {
   const [editMode, setEditMode] = useState('this');
 
@@ -19,22 +18,6 @@ export default function EditRecurringModal({
   return (
     <div className={styles.editRecurringOverlay}>
       <div className={styles.editRecurringBox}>
-        {/*<div className={styles.editRecurringHeader}>
-          🔄 Chỉnh sửa sự kiện lặp lại
-        </div>
-        
-        <div className={styles.editRecurringEventInfo}>
-          <h4>{event.name}</h4>
-          <p><strong>Giáo viên:</strong> {event.teacher}</p>
-          <p><strong>Thời gian:</strong> {
-            new Date(event.start?.dateTime || event.start).toLocaleString('vi-VN')
-          }</p>
-          <p><strong>Lịch lặp:</strong> {
-            event.recurrence_description || 
-            (event.recurrence ? `${event.recurrence} (${event.repeat_count || 1} lần)` : "Không lặp")
-          }</p>
-        </div>*/}
-        
         <div className={styles.editOptions}>
           <p><strong>Chọn cách chỉnh sửa:</strong></p>
           

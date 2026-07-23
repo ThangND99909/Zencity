@@ -1,5 +1,5 @@
 // frontend/src/components/DeleteConfirmationModal.js
-import React, { useState } from "react";
+import { useState } from "react";
 import styles from "./DeleteConfirmationModal.module.css";
 
 export default function DeleteConfirmationModal({

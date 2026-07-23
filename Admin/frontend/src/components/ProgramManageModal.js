@@ -1,5 +1,5 @@
 // frontend/src/components/ProgramManageModal.js
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import styles from "./ProgramManageModal.module.css";
 import { getPrograms, createProgram, updateProgram, deleteProgram } from "../services/api";
 
@@ -233,7 +233,7 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
         {/* Footer */}
         <div className={styles.modalFooter}>
           <button onClick={handleCancel} className={styles.btnClose}>
-            ✅ Đóng
+            ❌ Đóng
           </button>
         </div>
       </div>

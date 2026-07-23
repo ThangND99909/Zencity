@@ -327,7 +327,7 @@
 
 .btnClose {
   padding: 10px 20px;
-  background: #34a853;
+  background: #6c757d;
   color: white;
   border: none;
   border-radius: 6px;
@@ -338,7 +338,7 @@
 }
 
 .btnClose:hover {
-  background: #2d8e47;
+  background: #5c636a;
 }
 
 /* Scrollbar styling */

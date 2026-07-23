@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 def normalize_teacher_name(teacher_name):
     """Chuẩn hóa tên giáo viên để so sánh"""
     if not teacher_name:
@@ -20,24 +20,6 @@ def extract_teacher_from_event(cls):
             return parts[1].strip()
     
     return ""
-def parse_iso_datetime_flexible(dt_str):
-    """Parse datetime linh hoạt, xử lý cả với và không có timezone"""
-    if not dt_str:
-        return None
-    
-    try:
-        # Xử lý string có Z
-        if dt_str.endswith('Z'):
-            dt_str = dt_str.replace('Z', '+00:00')
-        
-        # Nếu không có timezone, thêm timezone mặc định (Vietnam)
-        if 'T' in dt_str and '+' not in dt_str and '-' not in dt_str.split('T')[1]:
-            dt_str = dt_str + '+07:00'
-        
-        return datetime.fromisoformat(dt_str)
-    except ValueError as e:
-        print(f"❌ Error parsing datetime {dt_str}: {e}")
-        return None
 def parse_iso_datetime_flexible(dt_str):
     """Parse datetime linh hoạt, xử lý cả với và không có timezone"""
     if not dt_str:

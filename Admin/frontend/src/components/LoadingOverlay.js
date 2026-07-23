@@ -1,4 +1,3 @@
-import React from 'react';
 import styles from './LoadingOverlay.module.css';
 
 const LoadingOverlay = ({ isLoading, type = 'default', message }) => {

@@ -1,15 +1,21 @@
 # main.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel, validator
-from calendar_crud import list_events, create_event, update_event, delete_event, get_event
+from calendar_crud import (
+    IdempotencyConflictError,
+    list_events,
+    create_event,
+    update_event,
+    delete_event,
+    get_event,
+    invalidate_cache,
+)
 from program_crud import get_all_programs, create_program, update_program, delete_program
 from fastapi.middleware.cors import CORSMiddleware
-from ai_agent import get_schedule_suggestion
 from datetime import datetime
 from typing import Optional, List
 from recurrence_helper import build_recurrence_rule
-from ai_agent import get_schedule_suggestion, ai_check_schedule_conflict
-import pytz
+from ai_agent import get_schedule_suggestion
 from recurrence_helper import build_recurrence_description
 
 app = FastAPI()
@@ -50,13 +56,13 @@ class ClassInfo(BaseModel):
     bymonthday: List[int] = []           # Các ngày trong tháng (MONTHLY/YEARLY)
     bymonth: List[int] = []              # Các tháng (YEARLY)
     timezone: str = "Asia/Ho_Chi_Minh"
+    request_id: Optional[str] = None
 
 # ✅ THÊM VALIDATOR MỚI
 @validator('start', 'end')
 def validate_iso_format(cls, v, values):
     try:
         from datetime import datetime
-        import pytz
         
         # Lấy timezone từ request, không ép thành Vietnam
         timezone_str = values.get('timezone', 'Asia/Ho_Chi_Minh')
@@ -79,13 +85,17 @@ class ConflictCheckRequest(BaseModel):
 
 # ---------------- Routes ----------------
 @app.get("/classes")
-def get_classes(calendar_type: str = "both"):
+def get_classes(
+    calendar_type: str = "both",
+    time_min: Optional[str] = None,
+    time_max: Optional[str] = None
+):
     """
     Lấy classes từ các calendar
     calendar_type: odd, even, both
     """
     try:
-        events = list_events(calendar_type)
+        events = list_events(calendar_type, time_min, time_max)
         print(f"📊 Returning {len(events)} events from calendar: {calendar_type}")
         
         # ✅ THÊM DEBUG ĐỂ KIỂM TRA RECURRENCE DATA
@@ -99,6 +109,8 @@ def get_classes(calendar_type: str = "both"):
             print(f"🔍 Sample recurring event: {sample_event.get('id')} - {sample_event.get('recurrence')}")
         
         return events
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print(f"❌ Error in get_classes: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -127,10 +139,12 @@ def get_single_event(event_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/classes")
-def add_class(class_info: ClassInfo):
+def add_class(
+    class_info: ClassInfo,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")
+):
     try:
         # 🔍 DEBUG REQUEST BODY RAW
-        import json
         from fastapi.encoders import jsonable_encoder
         
         print(f"🎯 RAW REQUEST BODY: {jsonable_encoder(class_info)}")
@@ -146,7 +160,11 @@ def add_class(class_info: ClassInfo):
         print(f"  - bymonthday: {class_info.bymonthday}")
         print(f"  - bymonth: {class_info.bymonth}")
         
-        data = class_info.dict()
+        request_key = (idempotency_key or class_info.request_id or "").strip() or None
+        if request_key and len(request_key) > 200:
+            raise HTTPException(status_code=400, detail="Idempotency key is too long")
+
+        data = class_info.dict(exclude={"request_id"})
         
         # 🔍 DEBUG TRƯỚC KHI GỌI build_recurrence_rule
         print(f"🔄 Before build_recurrence_rule:")
@@ -176,7 +194,15 @@ def add_class(class_info: ClassInfo):
             print(f"📦 Final data with rrule: {data['rrule']}")
             print(f"📝 Recurrence description: {data['recurrence_description']}")
         
-        return create_event(data)
+        result = create_event(data, idempotency_key=request_key)
+        invalidate_cache()  # xóa cache sau khi tạo mới
+        return result
+    except HTTPException:
+        raise
+    except IdempotencyConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except TimeoutError as e:
+        raise HTTPException(status_code=504, detail=f"Google Calendar timed out: {e}")
     except Exception as e:
         print(f"❌ Error in add_class: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -197,7 +223,9 @@ def edit_class(event_id: str, class_info: ClassInfo, edit_mode: str = 'this'):
         data["rrule"] = [recurrence_rule] if recurrence_rule else None
         data["recurrence_description"] = recurrence_description
         
-        return update_event(event_id, data)
+        result = update_event(event_id, data)
+        invalidate_cache()  # xóa cache sau khi cập nhật
+        return result
     except Exception as e:
         print(f"❌ Error in edit_class: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -208,7 +236,9 @@ def remove_class(event_id: str, delete_mode: str = 'this'):
         if not event_id or event_id == "undefined":
             raise HTTPException(status_code=400, detail="Invalid event ID")
         print(f"🗑️ Deleting class ID: {event_id}, mode: {delete_mode}")
-        return delete_event(event_id, delete_mode)
+        result = delete_event(event_id, delete_mode)
+        invalidate_cache()  # xóa cache sau khi xóa
+        return result
     except Exception as e:
         print(f"❌ Error in remove_class: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -222,67 +252,6 @@ def ai_suggest(teacher: str = None, duration_hours: int = 1):
         print(f"❌ Error in ai_suggest: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
-'''@app.post("/check-conflict")
-def api_check_conflict(request: ConflictCheckRequest):
-    """API endpoint kiểm tra xung đột - DÙNG AI CHỈ KHI CẦN"""
-    try:
-        print(f"🔄 Smart conflict check for: {request.teacher}")
-        
-        # Lấy tất cả classes hiện có từ cả 2 calendars
-        all_classes = list_events('both')
-        
-        # 1. TRADITIONAL CHECK NHANH TRƯỚC
-        from ai_agent import traditional_conflict_check
-        traditional_result = traditional_conflict_check(
-            existing_classes=all_classes,
-            teacher=request.teacher,
-            new_start=request.start,
-            new_end=request.end,
-            exclude_event_id=request.exclude_event_id
-        )
-        
-        # 2. CHỈ GỌI AI KHI CÓ CONFLICT (để có suggestions)
-        if traditional_result.get('has_conflict') and traditional_result.get('conflicts'):
-            print(f"🤖 Conflict detected - calling AI for smart suggestions...")
-            
-            from ai_agent import ai_check_schedule_conflict
-            ai_result = ai_check_schedule_conflict(
-                existing_classes=all_classes,
-                teacher=request.teacher,
-                new_start=request.start,
-                new_end=request.end,
-                exclude_event_id=request.exclude_event_id
-            )
-            
-            # Kết hợp kết quả: conflicts từ traditional + suggestions từ AI
-            result = {
-                'has_conflict': True,
-                'conflicts': traditional_result['conflicts'],
-                'suggestions': ai_result.get('suggestions', []),
-                'ai_analysis': ai_result.get('ai_analysis', 'AI đề xuất thời gian thay thế'),
-                'check_type': 'ai_suggestions'
-            }
-            
-        else:
-            # KHÔNG CÓ CONFLICT - chỉ dùng traditional (siêu nhanh)
-            print(f"✅ No conflict - traditional check only")
-            traditional_result['check_type'] = 'traditional_fast'
-            result = traditional_result
-        
-        print(f"✅ Smart check result: {result.get('has_conflict')} | Type: {result.get('check_type')}")
-        return result
-        
-    except Exception as e:
-        print(f"❌ Smart conflict check error: {e}")
-        # Fallback về traditional
-        from ai_agent import traditional_conflict_check
-        return traditional_conflict_check(
-            list_events('both'),
-            request.teacher, 
-            request.start, 
-            request.end
-        )'''
-
 @app.post("/check-conflict")
 def api_check_conflict(request: ConflictCheckRequest):
     """API endpoint kiểm tra xung đột - CHỈ DÙNG TRADITIONAL CHECK"""

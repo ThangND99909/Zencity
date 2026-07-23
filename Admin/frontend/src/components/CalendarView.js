@@ -1,5 +1,5 @@
 // frontend/src/components/CalendarView.js
-import React, { useState, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
+import { useState, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
 import styles from "./CalendarView.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
 import { getEvent } from "../services/api";
@@ -14,7 +14,7 @@ import moment from "moment-timezone";
 
 
 
-const CalendarView = forwardRef(function CalendarView({ events, onEventClick, onDateSelect, onCreateEvent, onDeleteEvent, calendarFilter }, ref) {
+const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, onDeleteEvent, calendarFilter }, ref) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPopup, setShowPopup] = useState(false);
@@ -22,6 +22,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
   const [showDetailPopup, setShowDetailPopup] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const [newEvent, setNewEvent] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
   const popupRef = useRef(null);
   const eventsRef = useRef(null);
   const scrollTargetRef = useRef(null); // ✅ THÊM REF LƯU TRỮ THỜI GIAN CẦN SCROLL
@@ -54,25 +56,12 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
   const [myCalendars, setMyCalendars] = useState([
     { id: 1, name: "Calendar Lẻ (Giờ lẻ)", color: "#1a73e8", checked: true },
     { id: 2, name: "Calendar Chẵn (Giờ chẵn)", color: "#34a853", checked: true },
-    //{ id: 3, name: "Other", color: "#fbbc04", checked: true },
   ]);
   
 
   const [timezoneOptions, setTimezoneOptions] = useState([
     { value: "Asia/Ho_Chi_Minh", label: "🇻🇳 Giờ Việt Nam (UTC+7)" },
     { value: "America/Chicago", label: "🇺🇸 Giờ miền Trung - Chicago (UTC-6/-5)" },
-    //{ value: "America/New_York", label: "🇺🇸 Giờ miền Đông - New York (UTC-5/-4)" },
-    //{ value: "America/Denver", label: "🇺🇸 Giờ miền Núi - Denver (UTC-7/-6)" },
-    //{ value: "America/Los_Angeles", label: "🇺🇸 Giờ miền Tây - Los Angeles (UTC-8/-7)" },
-    //{ value: "Europe/London", label: "🇬🇧 Giờ London (UTC+0/+1)" },
-    //{ value: "Europe/Paris", label: "🇫🇷 Giờ Paris (UTC+1/+2)" },
-    //{ value: "Europe/Berlin", label: "🇩🇪 Giờ Berlin (UTC+1/+2)" },
-    //{ value: "Asia/Tokyo", label: "🇯🇵 Giờ Tokyo (UTC+9)" },
-    //{ value: "Asia/Seoul", label: "🇰🇷 Giờ Seoul (UTC+9)" },
-    //{ value: "Asia/Singapore", label: "🇸🇬 Giờ Singapore (UTC+8)" },
-    //{ value: "Australia/Sydney", label: "🇦🇺 Giờ Sydney (UTC+10/+11)" },
-    //{ value: "Pacific/Auckland", label: "🇳🇿 Giờ New Zealand (UTC+12/+13)" },
-    //{ value: "UTC", label: "🌐 Giờ UTC" }
   ]);
 
   const [programOptions, setProgramOptions] = useState([
@@ -264,7 +253,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
       setShowDeleteModal(false);
       setEventToDelete(null);
       
-      //alert("✅ Đã xóa sự kiện thành công!");
       
     } catch (error) {
       console.error("❌ Error deleting event:", error);
@@ -532,12 +520,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     setShowPopup(true);
     
     console.log("📤 Opening edit form with mode:", editMode);
-  };
-
-  // ✅ HÀM XỬ LÝ EDIT TỪ CONTEXT MENU
-  const handleEditFromContextMenu = async (event) => {
-    handleEditEvent(event);
-    
   };
 
   // ✅ HÀM XỬ LÝ VIEW DETAILS TỪ CONTEXT MENU
@@ -1139,62 +1121,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     return { recurrenceType: "", repeatCount: 1, byday: [], bymonthday: [], bymonth: [] };
   };
 
-  const prepareEditData = async (cls) => {
-    const { zoomLink, meetingId, passcode, program, teacher, classname } = 
-      parseZoomInfo(cls.description || "");
-
-    const recurrenceData = await parseRecurrenceFromEvent(cls);
-
-    return {
-      id: cls.id,
-      name: cls.summary || "",
-      classname: cls.classname || classname || "",
-      teacher: cls.teacher || teacher || "",
-      zoom_link: cls.zoom_link || cls.location || zoomLink || "",
-      meeting_id: cls.meeting_id || meetingId || "",
-      passcode: cls.passcode || passcode || "",
-      program: cls.program || program || "",
-      start: cls.start?.dateTime || "",
-      end: cls.end?.dateTime || "",
-      recurrence: recurrenceData.recurrenceType,
-      repeat_count: recurrenceData.repeatCount,
-      byday: recurrenceData.byday,
-      bymonthday: recurrenceData.bymonthday,
-      bymonth: recurrenceData.bymonth,
-      timezone: cls.timezone || "Asia/Ho_Chi_Minh",
-      recurrence_description: cls.recurrence_description || "",
-      calendar_source: cls.calendar_source || 'odd',
-    };
-  };
-
-  const findMasterEvent = (recurringEventId) => {
-    if (!recurringEventId) {
-      console.error("❌ No recurringEventId provided");
-      return null;
-    }
-    
-    console.log("🔍 Looking for master event:", recurringEventId);
-    
-    // Tìm trong danh sách events hiện tại
-    const master = events.find(event => {
-      const isMaster = event.id === recurringEventId;
-      if (isMaster) {
-        console.log("✅ Found master in current events:", {
-          id: event.id,
-          summary: event.summary,
-          hasRecurrence: !!event.recurrence
-        });
-      }
-      return isMaster;
-    });
-    
-    if (!master) {
-      console.warn("⚠️ Master event not found in current events");
-    }
-    
-    return master;
-  };
-
   const [timePosition, setTimePosition] = useState(null);
   useEffect(() => {
     const updateTimeLine = () => {
@@ -1325,11 +1251,10 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     
     // ✅ HIỂN THỊ THÔNG BÁO VỀ CALENDAR
     //setTimeout(() => {
-    //  alert(`📅 Lưu ý:\nSự kiện bắt đầu lúc ${start.getHours()}h sẽ được lưu vào:\n${targetCalendar}\n\nGiờ chẵn → 📗 Calendar Chẵn\nGiờ lẻ → 📘 Calendar Lẻ`);
     //}, 100);
   };
 
-  const handleSave = async () => {
+  const performSave = async () => {
     console.log("🔥 [GOOGLE] SAVE EVENT - Edit mode:", newEvent.editMode);
     console.log("📊 newEvent object:", {
       editMode: newEvent?.editMode,
@@ -1391,14 +1316,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
       return;
     }
     
-    // ✅ KIỂM TRA GIỜ CHẴN LẺ TRƯỚC KHI LƯU
-    const hourType = checkEvenOddHour(newEvent.start);
-    const targetCalendar = hourType === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ';
-    
-    //alert(`🎯 Sự kiện sẽ được lưu vào: ${targetCalendar}\nGiờ bắt đầu: ${new Date(newEvent.start).getHours()}h (${hourType === 'even' ? 'chẵn' : 'lẻ'})`);
-    
     // 🔹 Chỉ gửi ISO chuẩn UTC (cực kỳ quan trọng)
-    //const formatForBackend = (date, timezone) => new Date(date).toISOString();
     // 🔍 KIỂM TRA XUNG ĐỘT TRƯỚC KHI LƯU
     if (newEvent.teacher && newEvent.teacher.trim() !== "") {
       try {
@@ -1523,14 +1441,29 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
     
 
     if (onCreateEvent) {
-      onCreateEvent(eventData);
+      await onCreateEvent(eventData);
     } else {
-      console.error("❌ onCreateEvent is not defined!");
+      throw new Error("onCreateEvent is not defined");
     }
 
     setEditingEvent(null);
     setNewEvent(null);
     setShowPopup(false);
+  };
+
+  const handleSave = async () => {
+    if (savingRef.current) return;
+
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      await performSave();
+    } catch (error) {
+      console.error("❌ Failed to save event:", error);
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -1802,11 +1735,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
             }}
           >
             <div className={styles.timeColumn}>
-              {/*<div className={styles.timezoneHeader}>
-                GMT{(new Date().getTimezoneOffset() / -60) >= 0 ? '+' : ''}
-                {new Date().getTimezoneOffset() / -60}
-              </div>*/}
-              
               <div className={styles.timeLabels}>
                 {timeSlots.map((t) => (
                   <div key={t} className={styles.timeLabel}>{t}</div>
@@ -2051,7 +1979,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
           isRecurring={contextMenu.isRecurring}
           onClose={handleCloseContextMenu}
           onDelete={handleDeleteFromContextMenu}
-          onEdit={handleEditFromContextMenu}
           onViewDetails={handleViewDetailsFromContextMenu}
         />
       )}
@@ -2250,19 +2177,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
                 ✏️ Chỉnh sửa
               </button>
 
-              {/*<button
-                onClick={() => {
-                  if (!selectedEvent.id) {
-                    alert("Không thể xóa: thiếu ID sự kiện");
-                    return;
-                  }
-                  onDeleteEvent?.(selectedEvent);
-                  setShowDetailPopup(false);
-                }}
-              >
-                🗑️ Xóa
-              </button>*/}
-
               <button onClick={() => setShowDetailPopup(false)}>Đóng</button>
             </div>
           </div>
@@ -2282,13 +2196,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
                 </div>
               )}
             </div>
-
-            {/*<div className={styles.debugInfo}>
-              <div><strong>DEBUG CALENDAR LOGIC:</strong></div>
-              <div>Giờ bắt đầu: {newEvent.start ? new Date(newEvent.start).getHours() : 'N/A'}h</div>
-              <div>Loại giờ: {newEvent?.hour_type || 'chưa xác định'} ({newEvent?.hour_type === 'even' ? 'chẵn' : 'lẻ'})</div>
-              <div>Calendar đích: {newEvent?.target_calendar || 'tự động'}</div>
-            </div>*/}
 
             <label>
               Tiêu đề (tự động):
@@ -2411,11 +2318,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
                     }));
                   }}
                 />
-                {/*{newEvent.start && (
-                  <div className={styles.timeNote}>
-                    Giờ: {new Date(newEvent.start).getHours()}h → {newEvent?.hour_type === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ'}
-                  </div>
-                )}*/}
               </div>
               <div className={styles.formGroup}>
                 <label>Kết thúc:</label>
@@ -2910,11 +2812,11 @@ const CalendarView = forwardRef(function CalendarView({ events, onEventClick, on
             )}
 
             <div className={styles.popupActions}>
-              <button onClick={handleSave} className={styles.btnSave}>
-                {editingEvent ? "💾 Cập nhật" : "➕ Tạo mới"}
+              <button onClick={handleSave} className={styles.btnSave} disabled={isSaving}>
+                {isSaving ? "⏳ Đang lưu..." : editingEvent ? "💾 Cập nhật" : "➕ Tạo mới"}
               </button>
               
-              <button onClick={() => setShowPopup(false)} className={styles.btnCancel}>
+              <button onClick={() => setShowPopup(false)} className={styles.btnCancel} disabled={isSaving}>
                 Hủy
               </button>
             </div>
