@@ -8,6 +8,7 @@
   padding: 20px;
   margin: 20px 0;
   position: relative;
+  box-sizing: border-box;
 }
 
 .tableContainer::before {
@@ -53,13 +54,6 @@
   align-items: center;
   justify-self: end;
   gap: 10px;
-}
-
-.weekNavDivider {
-  width: 1px;
-  height: 24px;
-  background: #dadce0;
-  margin: 0 4px;
 }
 
 .weekNavBtn {
@@ -126,6 +120,24 @@
   box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
 }
 
+.programNavigator {
+  display: flex;
+  align-items: center;
+}
+
+.programSelectLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.programSelectLabel > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #5f6368;
+}
+
 /* ============ EXCEL-STYLE WEEK SCHEDULE ============ */
 .scheduleBoards {
   display: flex;
@@ -168,6 +180,9 @@
 
 .scheduleTableWrapper {
   overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
 }
 
 .scheduleTable {
@@ -414,235 +429,6 @@
   font-size: 26px;
 }
 
-/* ============ TABLE STYLES ============ */
-.tableWrapper {
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid #e9ecef;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 14px;
-}
-
-.table thead {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-}
-
-.table th {
-  padding: 16px;
-  font-weight: 600;
-  color: #495057;
-  text-transform: uppercase;
-  font-size: 12px;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid #dee2e6;
-  position: sticky;
-  top: 0;
-  background: inherit;
-  z-index: 10;
-}
-
-.table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid #f1f3f5;
-  vertical-align: middle;
-  transition: all 0.2s ease;
-}
-
-/* ============ ROW STYLES ============ */
-.rowOdd {
-  background: linear-gradient(90deg, rgba(26, 115, 232, 0.02) 0%, rgba(26, 115, 232, 0.01) 100%);
-  border-left: 3px solid #1a73e8;
-}
-
-.rowEven {
-  background: linear-gradient(90deg, rgba(52, 168, 83, 0.02) 0%, rgba(52, 168, 83, 0.01) 100%);
-  border-left: 3px solid #34a853;
-}
-
-.tableRow:hover {
-  background: #f8f9fa !important;
-  transform: translateX(4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-
-/* ============ CALENDAR BADGE ============ */
-.calendarCell {
-  text-align: center;
-}
-
-.calendarBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  font-size: 18px;
-  transition: all 0.3s ease;
-}
-
-.badgeOdd {
-  background: rgba(26, 115, 232, 0.1);
-  color: #1a73e8;
-  border: 2px solid rgba(26, 115, 232, 0.2);
-}
-
-.badgeEven {
-  background: rgba(52, 168, 83, 0.1);
-  color: #34a853;
-  border: 2px solid rgba(52, 168, 83, 0.2);
-}
-
-/* ============ SUBJECT CELL ============ */
-.subjectCell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.subjectText {
-  font-weight: 600;
-  color: #212529;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ============ ZOOM LINK CONTAINER ============ */
-.zoomLinkContainer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 300px;
-}
-
-.zoomLinkText {
-  flex: 1;
-  color: #1a73e8;
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-  font-size: 13px;
-  word-break: break-all;
-  background: rgba(26, 115, 232, 0.05);
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid rgba(26, 115, 232, 0.1);
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.zoomLinkText:hover {
-  background: rgba(26, 115, 232, 0.1);
-  border-color: #1a73e8;
-}
-
-.buttonGroup {
-  display: flex;
-  gap: 4px;
-}
-
-.iconButton {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s ease;
-  background: #f8f9fa;
-}
-
-.copyButton:hover {
-  background: #1a73e8;
-  color: white;
-  transform: scale(1.1);
-}
-
-.openButton:hover {
-  background: #34a853;
-  color: white;
-  transform: scale(1.1);
-}
-
-.copyButton.copied {
-  background: #34a853 !important;
-  color: white !important;
-  animation: bounce 0.5s;
-}
-
-@keyframes bounce {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.2); }
-}
-
-/* ============ MEETING ID & PASSCODE ============ */
-.meetingIdContainer, .passcodeContainer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.meetingIdContainer span {
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-  font-weight: 600;
-  background: #f8f9fa;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #e9ecef;
-  min-width: 100px;
-  text-align: center;
-}
-
-.passcodeContainer span {
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-  font-weight: 700;
-  background: #fff3cd;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #ffeaa7;
-  color: #856404;
-  min-width: 60px;
-  text-align: center;
-}
-
-/* ============ TIME CELLS ============ */
-.timeCell {
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-  font-size: 13px;
-  color: #495057;
-  background: rgba(233, 236, 239, 0.3);
-  border-radius: 6px;
-  padding: 10px !important;
-  text-align: center;
-  min-width: 180px;
-}
-
-/* ============ RECURRENCE ============ */
-.recurrenceText {
-  background: rgba(255, 107, 53, 0.1);
-  color: #ff6b35;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: help;
-  display: inline-block;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ============ FOOTER ============ */
 .footer {
   display: flex;
@@ -662,12 +448,6 @@
 
 .footerStats strong {
   color: #212529;
-}
-
-.filterNote {
-  color: #1a73e8;
-  font-weight: 500;
-  margin-left: 12px;
 }
 
 .exportSection {
@@ -710,43 +490,23 @@
   box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
 }
 
-/* ============ NO DATA ============ */
-.noData {
-  text-align: center;
-  padding: 60px !important;
-  color: #6c757d;
-  font-size: 16px;
-  background: #f8f9fa;
-}
-
-.noData::before {
-  content: "📭";
-  font-size: 24px;
-  display: block;
-  margin-bottom: 12px;
-}
-
 /* ============ RESPONSIVE DESIGN ============ */
 @media (max-width: 992px) {
   .tableContainer {
     padding: 16px;
   }
-  
-  .table th, .table td {
-    padding: 12px 14px;
-  }
-  
-  .zoomLinkContainer {
-    max-width: 250px;
-  }
-  
-  .timeCell {
-    min-width: 160px;
-  }
 
   .viewToolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .programNavigator {
+    width: 100%;
+  }
+
+  .programSelectLabel {
+    flex: 1;
   }
 
   .programSelect {
@@ -782,20 +542,12 @@
     flex-wrap: wrap;
   }
 
-  .weekNavDivider {
-    display: none;
+  .weekNavBtn {
+    min-height: 42px;
   }
-  
+
   .footer {
     padding: 12px;
-  }
-  
-  .tableWrapper {
-    overflow-x: auto;
-  }
-  
-  .table {
-    min-width: 800px;
   }
 
   .programSelect {
@@ -808,263 +560,75 @@
     flex-direction: column;
   }
 
-  .zoomLinkContainer {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    max-width: 200px;
-  }
-  
-  .buttonGroup {
-    align-self: flex-end;
-  }
-  
   .footer {
     flex-direction: column;
     gap: 16px;
     text-align: center;
   }
-}
 
-/* ============ SCROLLBAR STYLING ============ */
-.tableWrapper::-webkit-scrollbar {
-  height: 8px;
-}
-
-.tableWrapper::-webkit-scrollbar-track {
-  background: #f1f3f5;
-  border-radius: 4px;
-}
-
-.tableWrapper::-webkit-scrollbar-thumb {
-  background: #adb5bd;
-  border-radius: 4px;
-}
-
-.tableWrapper::-webkit-scrollbar-thumb:hover {
-  background: #6c757d;
-}
-
-/* frontend/src/components/ClassTable.module.css */
-
-/* Modal styles */
-.modalOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.modalContent {
-  background: white;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 900px;
-  max-height: 80vh;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-  from {
-    transform: translateY(-30px);
-    opacity: 0;
+  .exportSection {
+    width: 100%;
   }
-  to {
-    transform: translateY(0);
-    opacity: 1;
+
+  .exportButton {
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .scheduleBoardHeader {
+    padding: 14px 12px;
+  }
+
+  .scheduleBoardHeader h3 {
+    font-size: 17px;
   }
 }
 
-.modalHeader {
-  padding: 20px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+@media (max-width: 480px) {
+  .tableContainer {
+    padding: 8px;
+    border-radius: 10px;
+  }
 
-.modalHeader h3 {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
+  .viewToolbar {
+    gap: 12px;
+    padding: 10px;
+  }
 
-.closeButton {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  font-size: 24px;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
+  .weekNavLeft,
+  .weekNavRight {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
 
-.closeButton:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: scale(1.1);
-}
+  .weekNavBtn {
+    padding: 8px 10px;
+  }
 
-.modalBody {
-  padding: 24px;
-  overflow-y: auto;
-  max-height: calc(80vh - 80px);
-}
+  .weekRange {
+    flex-basis: 100%;
+    font-size: 13px;
+  }
 
-.modalTable {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 20px;
-}
+  .programSelectLabel {
+    align-items: stretch;
+    flex-direction: column;
+  }
 
-.modalTable th {
-  background: #f7fafc;
-  padding: 12px;
-  text-align: left;
-  font-weight: 600;
-  color: #4a5568;
-  border-bottom: 2px solid #e2e8f0;
-}
+  .scheduleTable {
+    min-width: 1120px;
+  }
 
-.modalTable td {
-  padding: 12px;
-  border-bottom: 1px solid #e2e8f0;
-  color: #2d3748;
-}
+  .scheduleClassColumn {
+    width: 160px;
+  }
 
-.modalTable tr:hover {
-  background: #f7fafc;
-}
+  .scheduleZoomColumn {
+    width: 240px;
+  }
 
-.cancelled {
-  color: #e53e3e;
-  background: #fff5f5;
-  padding: 4px 8px;
-  border-radius: 20px;
-  font-size: 0.85rem;
-}
-
-.active {
-  color: #38a169;
-  background: #f0fff4;
-  padding: 4px 8px;
-  border-radius: 20px;
-  font-size: 0.85rem;
-}
-
-/* Pagination styles */
-.pagination {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background: white;
-  border-top: 1px solid #e2e8f0;
-  border-radius: 0 0 12px 12px;
-}
-
-.paginationInfo {
-  color: #718096;
-  font-size: 0.9rem;
-}
-
-.paginationControls {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.pageSizeSelect {
-  padding: 8px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-  color: #4a5568;
-  font-size: 0.9rem;
-  cursor: pointer;
-  outline: none;
-}
-
-.pageSizeSelect:hover {
-  border-color: #cbd5e0;
-}
-
-.pageButton {
-  padding: 8px 16px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  color: #4a5568;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s;
-}
-
-.pageButton:hover:not(:disabled) {
-  background: #f7fafc;
-  border-color: #cbd5e0;
-}
-
-.pageButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.pageInfo {
-  color: #4a5568;
-  font-size: 0.9rem;
-  min-width: 100px;
-  text-align: center;
-}
-
-/* Recurring group styles */
-.recurringGroup {
-  background: linear-gradient(to right, rgba(102, 126, 234, 0.05), transparent);
-  border-left: 3px solid #667eea;
-}
-
-.recurringGroup:hover {
-  background: linear-gradient(to right, rgba(102, 126, 234, 0.1), rgba(102, 126, 234, 0.02));
-}
-
-.recurrenceGroupBadge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  margin-left: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.recurrenceInfo {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.recurrenceCount {
-  color: #667eea;
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-
-.recurrenceRange {
-  font-size: 0.75rem;
-  color: #718096;
+  .scheduleDayColumn {
+    width: 120px;
+  }
 }

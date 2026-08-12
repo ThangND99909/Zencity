@@ -11,6 +11,8 @@
   align-items: center;
   justify-content: center;
   z-index: 3000;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .editRecurringBox {
@@ -21,6 +23,7 @@
   width: 90%;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   animation: slideUp 0.3s ease;
+  box-sizing: border-box;
 }
 
 @keyframes slideUp {
@@ -112,4 +115,30 @@
 
 .editRecurringBtn.confirm:hover {
   background: #0d62d9;
+}
+
+@media (max-width: 480px) {
+  .editRecurringOverlay {
+    align-items: flex-start;
+    padding: 8px;
+  }
+
+  .editRecurringBox {
+    width: 100%;
+    padding: 18px 14px;
+  }
+
+  .editOption {
+    align-items: flex-start;
+    padding: 10px;
+  }
+
+  .editRecurringActions {
+    flex-direction: column-reverse;
+  }
+
+  .editRecurringBtn {
+    width: 100%;
+    min-height: 44px;
+  }
 }

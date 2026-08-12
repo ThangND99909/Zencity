@@ -1,8 +1,10 @@
 import google.generativeai as genai
 import json
 import os
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from log_config import make_print
+
+print = make_print(__name__)
 
 load_dotenv()
 

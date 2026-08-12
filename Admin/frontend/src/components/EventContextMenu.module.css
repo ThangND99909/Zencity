@@ -9,6 +9,8 @@
   z-index: 1000;
   min-width: 240px;
   animation: fadeIn 0.2s ease;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
 }
 
 @keyframes fadeIn {
@@ -69,4 +71,17 @@
   background: #fff8e1;
   border-top: 1px solid #ffecb3;
   border-radius: 0 0 8px 8px;
+}
+
+@media (max-width: 480px) {
+  .contextMenu {
+    right: 8px !important;
+    left: 8px !important;
+    width: auto;
+    min-width: 0;
+  }
+
+  .contextMenuItem {
+    min-height: 44px;
+  }
 }

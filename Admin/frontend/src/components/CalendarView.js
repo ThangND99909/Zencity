@@ -45,8 +45,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [editRecurringOptions, setEditRecurringOptions] = useState({
     event: null,
-    originalEvent: null,
-    editMode: 'this'
+    originalEvent: null
   });
 
   // ✅ PROGRAM MANAGEMENT
@@ -431,8 +430,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         console.log("🔄 Recurring event edit detected, showing mode selector");
         setEditRecurringOptions({
           event: editEventData,
-          originalEvent: event,
-          editMode: 'this'
+          originalEvent: event
         });
         setShowEditRecurringModal(true);
       } else {
@@ -570,8 +568,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     };
   }, [events, searchQuery, programOptions]);
 
-  // ✅ FILTER EVENTS DỰA TRÊN CALENDAR FILTER
-  const filteredEvents = events.filter(event => {
+  // ✅ FILTER EVENTS DỰA TRÊN CALENDAR FILTER (memo hóa để không tính lại mỗi render)
+  const filteredEvents = useMemo(() => events.filter(event => {
     // 1. Lọc theo calendarFilter (odd/even/both)
     let passesCalendarFilter = true;
     if (calendarFilter === 'odd') {
@@ -613,9 +611,9 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     const program = (event.program || parsed.program || "").toLowerCase();
     // AND logic: mỗi từ phải khớp ít nhất 1 trường
     return words.every(w => className.includes(w) || teacher.includes(w) || program.includes(w));
-  });
+  }), [events, calendarFilter, myCalendars, searchQuery]);
 
-  const dailyEvents = filteredEvents.filter((e) => {
+  const dailyEvents = useMemo(() => filteredEvents.filter((e) => {
     const start = new Date(e.start.dateTime || e.start);
     const end = new Date(e.end.dateTime || e.end);
     const dayStart = new Date(selectedDate);
@@ -623,7 +621,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     const dayEnd = new Date(selectedDate);
     dayEnd.setHours(23, 59, 59, 999);
     return end > dayStart && start < dayEnd;
-  });
+  }), [filteredEvents, selectedDate]);
 
   const layoutEvents = (events) => {
     const dayStart = new Date(selectedDate);
@@ -659,7 +657,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     return positioned;
   };
 
-  const layoutedEvents = layoutEvents(dailyEvents);
+  const layoutedEvents = useMemo(() => layoutEvents(dailyEvents), [dailyEvents, selectedDate]);
 
   // ✅ AUTO-SCROLL KHIBANGAY CÓ SCROLL TARGET
   useEffect(() => {
@@ -877,14 +875,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     const raw = event.description || "";
     const { zoomLink, teacher, program, classname, meetingId, passcode } = parseZoomInfo(raw);
     const eventId = event.id || event._id || event.eventId || event.class_id;
-
-    console.log("🔍 NORMALIZE EVENT - TYPE CHECK:", {
-      eventId,
-      isInstance: event._is_instance,
-      isMaster: event._is_master,
-      hasRecurrence: !!event.recurrence,
-      recurringEventId: event.recurringEventId
-    });
 
     // ✅ ƯU TIÊN: Nếu là instance, dùng data từ instance
     // Nếu là master, dùng data từ master
@@ -1248,10 +1238,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     setNewEvent(defaultEvent);
     setEditingEvent(null);
     setShowPopup(true);
-    
-    // ✅ HIỂN THỊ THÔNG BÁO VỀ CALENDAR
-    //setTimeout(() => {
-    //}, 100);
   };
 
   const performSave = async () => {
@@ -1753,7 +1739,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                 const normalizedEvent = normalizeEvent(e);
                 const top = e.startMins;
                 const height = Math.max(e.endMins - e.startMins, 30);
-                console.log("🧭 DEBUG EVENT:", normalizedEvent);
                 // ✅ ÁP DỤNG CSS CLASS DỰA TRÊN CALENDAR SOURCE
                 const eventClass = normalizedEvent.calendar_source === 'odd' 
                   ? styles.eventItemOdd 
@@ -2005,8 +1990,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
             setShowEditRecurringModal(false);
             setEditRecurringOptions({
               event: null,
-              originalEvent: null,
-              editMode: 'this'
+              originalEvent: null
             });
           }}
         />
@@ -2145,30 +2129,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                     alert("Không thể chỉnh sửa: thiếu ID sự kiện");
                     return;
                   }
-                  const recurrenceData = await parseRecurrenceFromEvent(selectedEvent);
-
-                  const editEventData = {
-                    id: selectedEvent.id,
-                    title: selectedEvent.name,
-                    class_name: selectedEvent.class_name || selectedEvent.classname || "",
-                    teacher: selectedEvent.teacher,
-                    program: selectedEvent.program,
-                    zoom_link: selectedEvent.zoom,
-                    meeting_id: selectedEvent.meeting_id || "",
-                    passcode: selectedEvent.passcode || "",
-                    recurrence: recurrenceData.recurrenceType,
-                    repeat_count: recurrenceData.repeatCount,
-                    byday: recurrenceData.byday,
-                    bymonthday: recurrenceData.bymonthday,
-                    bymonth: recurrenceData.bymonth,
-                    start: formatForInput(selectedEvent.start?.dateTime || selectedEvent.start),
-                    end: formatForInput(selectedEvent.end?.dateTime || selectedEvent.end),
-                    timezone: selectedEvent.timezone || "Asia/Ho_Chi_Minh",
-                    recurrence_description: selectedEvent.recurrence_description || "",
-                    calendar_source: selectedEvent.calendar_source,
-                  };
-
-                  setNewEvent(editEventData);
                   handleEditEvent(selectedEvent);
                   setShowDetailPopup(false);
                   setShowPopup(true);

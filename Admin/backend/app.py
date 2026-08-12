@@ -1,6 +1,6 @@
 # main.py
 from fastapi import FastAPI, HTTPException, Header
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from calendar_crud import (
     IdempotencyConflictError,
     list_events,
@@ -11,12 +11,16 @@ from calendar_crud import (
     invalidate_cache,
 )
 from program_crud import get_all_programs, create_program, update_program, delete_program
+from googleapiclient.errors import HttpError
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from typing import Optional, List
 from recurrence_helper import build_recurrence_rule
 from ai_agent import get_schedule_suggestion
 from recurrence_helper import build_recurrence_description
+from log_config import make_print
+
+print = make_print(__name__)
 
 app = FastAPI()
 
@@ -58,25 +62,24 @@ class ClassInfo(BaseModel):
     timezone: str = "Asia/Ho_Chi_Minh"
     request_id: Optional[str] = None
 
-# ✅ THÊM VALIDATOR MỚI
-@validator('start', 'end')
-def validate_iso_format(cls, v, values):
-    try:
-        from datetime import datetime
-        
-        # Lấy timezone từ request, không ép thành Vietnam
-        timezone_str = values.get('timezone', 'Asia/Ho_Chi_Minh')
-        
-        # CHỈ validate format, KHÔNG thêm timezone vào string
-        if not v.endswith('Z') and '+' not in v and '-' not in v.split('T')[1]:
-            # Chỉ kiểm tra định dạng ISO, không thêm timezone
-            datetime.fromisoformat(v)
-            print(f"✅ Valid ISO format (no timezone), will use timeZone field: {timezone_str}")
-        
-        return v  # Giữ nguyên string không có timezone
-    except ValueError:
-        raise ValueError(f"Invalid ISO datetime format: {v}")
-        
+    @field_validator('start', 'end')
+    @classmethod
+    def validate_iso_format(cls, v: str) -> str:
+        """Đảm bảo start/end là chuỗi ISO 8601 hợp lệ (chấp nhận 'Z', offset, hoặc naive).
+
+        Chỉ validate định dạng và giữ nguyên chuỗi gốc — việc gắn/chuẩn hóa timezone
+        do lớp normalize_datetime_with_timezone xử lý sau.
+        """
+        if not v or not v.strip():
+            raise ValueError("Datetime string must not be empty")
+        try:
+            # Chấp nhận cả 'Z' (UTC) lẫn offset lẫn naive datetime trên mọi phiên bản Python
+            datetime.fromisoformat(v.replace('Z', '+00:00'))
+        except ValueError:
+            raise ValueError(f"Invalid ISO datetime format: {v}")
+        return v
+
+
 class ConflictCheckRequest(BaseModel):
     teacher: str
     start: str
@@ -131,12 +134,18 @@ def get_single_event(event_id: str):
             return event
         else:
             raise HTTPException(status_code=404, detail="Event not found")
-            
+
     except HTTPException:
         raise
+    except HttpError as e:
+        status = getattr(e.resp, 'status', None)
+        if status == 404:
+            raise HTTPException(status_code=404, detail="Event not found")
+        print(f"❌ Google API error in get_single_event: {e}")
+        raise HTTPException(status_code=502, detail="Upstream calendar error")
     except Exception as e:
         print(f"❌ Error in get_single_event: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/classes")
 def add_class(
@@ -144,14 +153,10 @@ def add_class(
     idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")
 ):
     try:
-        # 🔍 DEBUG REQUEST BODY RAW
-        from fastapi.encoders import jsonable_encoder
-        
-        print(f"🎯 RAW REQUEST BODY: {jsonable_encoder(class_info)}")
-        
-        print(f"📥 Adding class: {class_info.classname}")
-        print(f"📥 RAW class_info: {class_info}")
-        
+        # ⚠️ FIX M10: KHÔNG log toàn bộ payload (chứa passcode/zoom_link) và tránh
+        #    encode nặng mỗi request. Chỉ log các field không nhạy cảm.
+        print(f"📥 Adding class: {class_info.classname} | program={class_info.program}")
+
         # 🔍 DEBUG CHI TIẾT RECURRENCE DATA
         print(f"🔍 RECURRENCE DEBUG:")
         print(f"  - recurrence: '{class_info.recurrence}'")
@@ -226,9 +231,11 @@ def edit_class(event_id: str, class_info: ClassInfo, edit_mode: str = 'this'):
         result = update_event(event_id, data)
         invalidate_cache()  # xóa cache sau khi cập nhật
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Error in edit_class: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete("/classes/{event_id}")
 def remove_class(event_id: str, delete_mode: str = 'this'):
@@ -239,9 +246,11 @@ def remove_class(event_id: str, delete_mode: str = 'this'):
         result = delete_event(event_id, delete_mode)
         invalidate_cache()  # xóa cache sau khi xóa
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Error in remove_class: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/ai/suggest")
 def ai_suggest(teacher: str = None, duration_hours: int = 1):
@@ -289,21 +298,7 @@ def get_timezones():
     return {
         "timezones": [
             {"value": "Asia/Ho_Chi_Minh", "label": "🇻🇳 Giờ Việt Nam (UTC+7)"},
-            #{"value": "Asia/Bangkok", "label": "🇹🇭 Giờ Thái Lan (UTC+7)"},
-            #{"value": "Asia/Singapore", "label": "🇸🇬 Giờ Singapore (UTC+8)"},
-            #{"value": "Asia/Tokyo", "label": "🇯🇵 Giờ Nhật Bản (UTC+9)"},
-            #{"value": "Asia/Seoul", "label": "🇰🇷 Giờ Hàn Quốc (UTC+9)"},
-            #{"value": "Asia/Shanghai", "label": "🇨🇳 Giờ Trung Quốc (UTC+8)"},
-            #{"value": "America/New_York", "label": "🇺🇸 Giờ Miền Đông (UTC-5/-4)"},
-            {"value": "America/Chicago", "label": "🇺🇸 Giờ Miền Trung (UTC-6/-5)"},
-            #{"value": "America/Denver", "label": "🇺🇸 Giờ Miền Núi (UTC-7/-6)"},
-            #{"value": "America/Los_Angeles", "label": "🇺🇸 Giờ Miền Tây (UTC-8/-7)"},
-            #{"value": "Europe/London", "label": "🇬🇧 Giờ London (UTC+0/+1)"},
-            #{"value": "Europe/Paris", "label": "🇫🇷 Giờ Paris (UTC+1/+2)"},
-            #{"value": "Europe/Berlin", "label": "🇩🇪 Giờ Berlin (UTC+1/+2)"},
-            #{"value": "Australia/Sydney", "label": "🇦🇺 Giờ Sydney (UTC+10/+11)"},
-            #{"value": "Pacific/Auckland", "label": "🇳🇿 Giờ New Zealand (UTC+12/+13)"},
-            #{"value": "UTC", "label": "🌐 Giờ UTC"}
+            {"value": "America/Chicago", "label": "🇺🇸 Giờ Miền Trung (UTC-6/-5)"}
         ]
     }
 

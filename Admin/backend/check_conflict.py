@@ -1,4 +1,9 @@
 from datetime import datetime, timezone
+from log_config import make_print
+
+print = make_print(__name__)
+
+
 def normalize_teacher_name(teacher_name):
     """Chuẩn hóa tên giáo viên để so sánh"""
     if not teacher_name:

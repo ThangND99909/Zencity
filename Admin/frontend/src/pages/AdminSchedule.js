@@ -2,19 +2,15 @@
 import { useEffect, useState, useRef } from "react";
 import { getClasses, addClass, updateClass, deleteClass } from "../services/api";
 import ClassTable from "../components/ClassTable";
-import ClassForm from "../components/ClassForm";
 import CalendarView from "../components/CalendarView";
 import styles from "./AdminSchedule.module.css";
 import LoadingOverlay from '../components/LoadingOverlay';
 import PasscodeModal from "../components/PasscodeModal";
-//import logo from '../assets/logo.png';
 
 const CORRECT_PASSCODE = "1234"; // 🔐 Thay đổi passcode của bạn tại đây
 
 export default function AdminSchedule() {
   const [classes, setClasses] = useState([]);
-  const [editingClass, setEditingClass] = useState(null);
-  const [creatingClass, setCreatingClass] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingType, setLoadingType] = useState('default');
@@ -61,38 +57,61 @@ export default function AdminSchedule() {
   const getCacheKey = (filter) => `zencity_classes_${filter}`;
   const CACHE_TTL_MS = 60 * 1000; // 60 giây — khớp với backend
 
-  const loadClasses = async (filter = calendarFilter) => {
+  // 🧹 Xóa cache localStorage của 1 filter — gọi sau khi ghi để không hiển thị dữ liệu cũ
+  const invalidateLocalCache = (filter = calendarFilter) => {
     try {
-      setError(null);
+      localStorage.removeItem(getCacheKey(filter));
+    } catch (_) {}
+  };
 
-      // ⚡ Hiển thị cache ngay lập tức nếu còn hợp lệ
-      const cacheKey = getCacheKey(filter);
-      try {
-        const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
-        if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-          setClasses(cached.data);
-          // Vẫn fetch mới ở nền nhưng không show loading
-          getClasses(filter).then(fresh => {
-            setClasses(fresh);
-            localStorage.setItem(cacheKey, JSON.stringify({ data: fresh, ts: Date.now() }));
-          }).catch(() => {}); // lỗi nền thì bỏ qua
-          return;
-        }
-      } catch (_) {}
+  /**
+   * Tải danh sách lớp.
+   * @param {string} filter  odd | even | both
+   * @param {object} options
+   *   - force: bỏ qua cache localStorage, luôn fetch dữ liệu mới (dùng sau khi ghi / bấm Refresh)
+   *   - background: không hiện loading overlay và không set error (làm mới im lặng ở nền)
+   */
+  const loadClasses = async (filter = calendarFilter, { force = false, background = false } = {}) => {
+    try {
+      if (!background) setError(null);
 
-      // Không có cache hợp lệ → show loading và fetch
-      showLoading('classes');
+      // ⚡ Hiển thị cache ngay lập tức nếu còn hợp lệ (bỏ qua khi force)
+      if (!force) {
+        const cacheKey = getCacheKey(filter);
+        try {
+          const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+          if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+            setClasses(cached.data);
+            // Vẫn fetch mới ở nền nhưng không show loading
+            getClasses(filter).then(fresh => {
+              setClasses(fresh);
+              localStorage.setItem(cacheKey, JSON.stringify({ data: fresh, ts: Date.now() }));
+            }).catch(() => {}); // lỗi nền thì bỏ qua
+            return;
+          }
+        } catch (_) {}
+      }
+
+      // Không có cache hợp lệ (hoặc force) → fetch
+      if (!background) showLoading('classes');
       const data = await getClasses(filter);
       setClasses(data);
       try {
-        localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() }));
+        localStorage.setItem(getCacheKey(filter), JSON.stringify({ data, ts: Date.now() }));
       } catch (_) {}
     } catch (err) {
-      setError("Failed to load classes: " + err.message);
+      // Ở chế độ nền: ghi đã thành công, chỉ log lỗi làm mới, không làm phiền người dùng
+      if (!background) setError("Failed to load classes: " + err.message);
       console.error("Load classes error:", err);
     } finally {
-      hideLoading();
+      if (!background) hideLoading();
     }
+  };
+
+  // 🔄 Làm mới danh sách ở nền sau khi ghi: không hiện overlay, luôn lấy dữ liệu mới
+  const refreshClassesInBackground = (filter = calendarFilter) => {
+    invalidateLocalCache(filter);
+    loadClasses(filter, { force: true, background: true });
   };
 
   // 🔐 Chỉ load data khi đã xác thực passcode
@@ -143,9 +162,10 @@ export default function AdminSchedule() {
         bymonth: data.bymonth || [],
         timezone: data.timezone || "Asia/Ho_Chi_Minh"
       });
-      await loadClasses(calendarFilter);
-      setCreatingClass(null);
-      
+      // ⚡ Không chặn UI để chờ tải lại: ẩn overlay ngay sau khi ghi xong,
+      //    danh sách được làm mới ở nền (mục 1 tối ưu hiệu năng cảm nhận).
+      refreshClassesInBackground(calendarFilter);
+
       // ✅ SHOW CALENDAR TỚI TRƯỚC ĐỂ ĐỢI RENDER
       if (!showCalendar) {
         setShowCalendar(true);
@@ -195,7 +215,7 @@ export default function AdminSchedule() {
   const handleUpdate = async (data) => {
     try {
       showLoading('update');
-      const id = data.id || editingClass?.id;
+      const id = data.id;
       const editMode = data.edit_mode || data.editMode || 'this';
       
       
@@ -219,10 +239,10 @@ export default function AdminSchedule() {
 
       // Call API with edit_mode
       await updateClass(targetId, updateData);
-      
-      await loadClasses(calendarFilter);
-      setEditingClass(null);
-      
+
+      // ⚡ Làm mới ở nền, không chặn UI chờ tải lại (mục 1)
+      refreshClassesInBackground(calendarFilter);
+
       // Success message theo mode
       let message = "Cập nhật thành công!";
       if (editMode === 'following') {
@@ -300,10 +320,10 @@ export default function AdminSchedule() {
       const result = await deleteClass(eventId, deleteMode);
       
       console.log("🗑️ Delete result:", result);
-      
-      // Reload data
-      await loadClasses(calendarFilter);
-      
+
+      // ⚡ Làm mới ở nền, không chặn UI chờ tải lại (mục 1)
+      refreshClassesInBackground(calendarFilter);
+
       // Hiển thị thông báo thành công
       showMessage("✅ Đã xóa sự kiện thành công!", "success");
       
@@ -315,16 +335,12 @@ export default function AdminSchedule() {
     }
   };
 
-  const handleCancelEdit = () => {
-    setEditingClass(null);
-    setCreatingClass(null);
-  };
-
   const handleRefresh = async () => {
     try {
-      // Load classes trước
-      await loadClasses(calendarFilter);
-      
+      // Bấm Refresh → luôn lấy dữ liệu mới (bỏ qua cache localStorage cũ)
+      invalidateLocalCache(calendarFilter);
+      await loadClasses(calendarFilter, { force: true });
+
       // Delay một chút để loading ẩn đi rồi mới hiển thị thông báo
       setTimeout(() => {
         showMessage("Classes refreshed successfully!", "success");
@@ -334,11 +350,6 @@ export default function AdminSchedule() {
       showMessage("Refresh failed: " + err.message, "error");
     }
   };
-
-  const isEditing = !!editingClass;
-  const isCreating = !!creatingClass;
-  const showForm = isEditing || isCreating;
-  const formData = editingClass || creatingClass;
 
   return (
     <div className={styles.container}>
@@ -389,8 +400,6 @@ export default function AdminSchedule() {
           <button
             className={`${styles.btn} ${styles.btnToggleCalendar}`}
             onClick={() => {
-              setEditingClass(null);
-              setCreatingClass(null);
               setShowCalendar(!showCalendar);
             }}
           >
@@ -435,22 +444,11 @@ export default function AdminSchedule() {
               events={classes}
               onCreateEvent={(event) => event.id ? handleUpdate(event) : handleAdd(event)}
               onDeleteEvent={handleDelete}
-              highlightedSlot={creatingClass}
               calendarFilter={calendarFilter}
             />
           </div>
         ) : (
           <div className={styles.tableWrapper}>
-            {showForm && (
-              <div className={styles.formBox}>
-                
-                <ClassForm
-                  initialData={formData}
-                  onSubmit={isEditing ? handleUpdate : handleAdd}
-                  onCancel={handleCancelEdit}
-                />
-              </div>
-            )}
             <div>
               {classes.length === 0 ? (
                 <div className={styles.emptyBox}>No classes found. Create your first class!</div>

@@ -9,6 +9,7 @@
   justify-content: center;
   align-items: center;
   z-index: 1000;
+  padding: 16px;
 }
 
 .modalContent {
@@ -19,6 +20,7 @@
   width: 90%;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   animation: slideIn 0.3s ease-out;
+  box-sizing: border-box;
 }
 
 @keyframes slideIn {
@@ -119,4 +121,28 @@
 .submitButton:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .modalOverlay {
+    padding: 8px;
+  }
+
+  .modalContent {
+    width: 100%;
+    padding: 28px 18px;
+  }
+
+  .modalContent h2 {
+    font-size: 21px;
+  }
+
+  .form input {
+    min-width: 0;
+    font-size: 16px;
+  }
+
+  .submitButton {
+    min-height: 44px;
+  }
 }

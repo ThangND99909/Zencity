@@ -363,8 +363,9 @@
 /* Responsive */
 @media (max-width: 600px) {
   .modalContent {
-    width: 95%;
+    width: calc(100% - 16px);
     max-height: 90vh;
+    box-sizing: border-box;
   }
 
   .modalHeader,
@@ -390,5 +391,21 @@
 
   .btnAdd {
     width: 100%;
+  }
+
+  .modalOverlay {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .modalFooter {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .modalFooter button {
+    flex: 1 1 120px;
+    min-height: 44px;
   }
 }

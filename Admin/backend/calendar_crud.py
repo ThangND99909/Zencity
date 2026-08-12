@@ -12,6 +12,9 @@ import pytz
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from log_config import make_print
+
+print = make_print(__name__)
 
 EXTRA_FILE = Path("data/classes_extra.json")
 
@@ -21,6 +24,7 @@ _calendar_sync_state = {}
 _cache_lock = threading.RLock()
 _refresh_lock = threading.Lock()
 CACHE_TTL = 60  # seconds — đủ để tránh duplicate requests, không quá stale
+MAX_SYNC_STATE_KEYS = 32  # FIX M5: chặn _calendar_sync_state phình vô hạn theo ngày
 
 EVENT_LIST_FIELDS = (
     "nextPageToken,nextSyncToken,"
@@ -30,6 +34,20 @@ EVENT_LIST_FIELDS = (
 
 GOOGLE_WRITE_TIMEOUT = 30
 GOOGLE_WRITE_ATTEMPTS = 2
+
+
+def _wr_http():
+    """
+    FIX H1: Trả về một transport (httplib2.Http) riêng cho MỖI lời gọi API.
+
+    `calendar_service` dùng chung một httplib2.Http mặc định — KHÔNG thread-safe.
+    FastAPI chạy các handler `def` trong threadpool nên nhiều request ghi/đọc
+    chạy song song trên các thread khác nhau; nếu cùng dùng transport mặc định
+    chúng có thể interleave trên cùng socket → response hỏng/treo/lỗi auth.
+    Mỗi `.execute()` ở đường ghi/get phải truyền `http=_wr_http()` để có transport
+    độc lập (đường đọc `list_events` đã làm điều này qua `create_calendar_http`).
+    """
+    return create_calendar_http(timeout=GOOGLE_WRITE_TIMEOUT)
 
 
 class IdempotencyConflictError(Exception):
@@ -130,10 +148,34 @@ def _set_cache(key, data):
         _events_cache[key] = {'data': data, 'ts': time.time()}
 
 def invalidate_cache():
-    """Gọi khi có thay đổi (create/update/delete) để cache không stale"""
+    """Gọi khi có thay đổi (create/update/delete) để cache không stale.
+
+    Chỉ xóa kết quả đã cache (_events_cache). GIỮ LẠI _calendar_sync_state để lần
+    load kế tiếp dùng incremental sync (chỉ tải phần thay đổi nhờ syncToken +
+    showDeleted=True) thay vì full sync toàn bộ cửa sổ thời gian → nhanh hơn nhiều.
+    """
     with _cache_lock:
         _events_cache.clear()
-        _calendar_sync_state.clear()
+
+
+def _prune_sync_state_locked():
+    """FIX M5: giới hạn số state của incremental sync.
+
+    _calendar_sync_state key theo (calendar_id, time_min, time_max); cửa sổ thời gian
+    mặc định neo theo 'hôm nay' nên mỗi ngày sinh key mới, các key cũ không bao giờ
+    được truy cập lại → phình bộ nhớ. Chỉ giữ lại MAX_SYNC_STATE_KEYS state mới nhất.
+    Phải gọi khi ĐANG giữ _cache_lock. Loại state cũ chỉ khiến lần load kế của cửa sổ
+    đó chạy full sync (kết quả không đổi) → KHÔNG thay đổi hành vi.
+    """
+    if len(_calendar_sync_state) <= MAX_SYNC_STATE_KEYS:
+        return
+    ordered = sorted(
+        _calendar_sync_state.items(),
+        key=lambda kv: kv[1].get('ts', 0),
+        reverse=True
+    )
+    for key, _ in ordered[MAX_SYNC_STATE_KEYS:]:
+        _calendar_sync_state.pop(key, None)
 
 # ========== HELPER FUNCTIONS ==========
 def normalize_datetime_with_timezone(dt_str, timezone_str):
@@ -222,46 +264,60 @@ def build_event_description(class_info):
     return base_description
 
 # ---------------- JSON Helper ----------------
+# FIX M7: serialize read-modify-write để nhiều request (threadpool) không ghi đè/hỏng file.
+_extra_file_lock = threading.Lock()
+
 def load_extra():
     if EXTRA_FILE.exists():
-        with open(EXTRA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(EXTRA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            # File hỏng/không đọc được → trả rỗng thay vì làm sập cả endpoint
+            print(f"⚠️ Could not read {EXTRA_FILE}, using empty: {e}")
+            return {}
     return {}
 
 def save_extra(data):
+    # FIX M7: ghi atomic (temp file + replace) để không hỏng file khi ghi dở
     EXTRA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(EXTRA_FILE, "w", encoding="utf-8") as f:
+    tmp = EXTRA_FILE.with_name(EXTRA_FILE.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+    tmp.replace(EXTRA_FILE)
 
 def add_extra(event_id, meeting_id, passcode, zoom_link="", classname="", calendar_id=""):
-    extra = load_extra()
-    extra[event_id] = {
-        "zoom_link": zoom_link,
-        "meeting_id": meeting_id,
-        "passcode": passcode,
-        "classname": classname,
-        "calendar_id": calendar_id
-    }
-    save_extra(extra)
+    with _extra_file_lock:
+        extra = load_extra()
+        extra[event_id] = {
+            "zoom_link": zoom_link,
+            "meeting_id": meeting_id,
+            "passcode": passcode,
+            "classname": classname,
+            "calendar_id": calendar_id
+        }
+        save_extra(extra)
     print(f"✅ Extra data saved for event {event_id} with calendar_id: {calendar_id}")
 
 def update_extra(event_id, meeting_id, passcode, zoom_link="", classname="", calendar_id=""):
-    extra = load_extra()
-    extra[event_id] = {
-        "zoom_link": zoom_link,
-        "meeting_id": meeting_id,
-        "passcode": passcode,
-        "classname": classname,
-        "calendar_id": calendar_id
-    }
-    save_extra(extra)
+    with _extra_file_lock:
+        extra = load_extra()
+        extra[event_id] = {
+            "zoom_link": zoom_link,
+            "meeting_id": meeting_id,
+            "passcode": passcode,
+            "classname": classname,
+            "calendar_id": calendar_id
+        }
+        save_extra(extra)
     print(f"✅ Extra data updated for event {event_id} with calendar_id: {calendar_id}")
 
 def remove_extra(event_id):
-    extra = load_extra()
-    if event_id in extra:
-        del extra[event_id]
-        save_extra(extra)
+    with _extra_file_lock:
+        extra = load_extra()
+        if event_id in extra:
+            del extra[event_id]
+            save_extra(extra)
 
 # ========== HÀM XÁC ĐỊNH CALENDAR ==========
 def determine_calendar_by_hour(start_datetime_str):
@@ -340,6 +396,90 @@ def get_calendar_type_by_id(calendar_id):
     else:
         return 'unknown'
 
+def _master_id_from_instance(event_id):
+    """Suy ra id master từ id instance dạng 'MASTER_YYYYMMDDTHHMMSSZ'.
+
+    Trả về None nếu event_id không phải instance (không chứa '_').
+    """
+    if not event_id or '_' not in event_id:
+        return None
+    parts = event_id.split('_')
+    return '_'.join(parts[:-1]) or parts[0]
+
+
+def _resolve_calendar_order(event_id):
+    """Thứ tự calendar nên thử khi định vị 1 event.
+
+    Ưu tiên calendar_id đã lưu trong classes_extra.json (nếu có) để tránh phải
+    dò cả 2 calendar bằng 2 round-trip. Luôn giữ đủ 2 calendar làm fallback nên
+    không ảnh hưởng tính đúng đắn — chỉ giảm số lần gọi API ở trường hợp phổ biến.
+
+    FIX (mục 3): instance của chuỗi lặp (id dạng 'MASTER_YYYYMMDDTHHMMSSZ') KHÔNG
+    được lưu calendar_id riêng, nhưng luôn nằm CÙNG calendar với master. Nếu không
+    tìm thấy calendar_id cho chính event_id, thử dùng calendar_id của master làm gợi ý
+    → thao tác trên instance (sửa/xóa 'this'/'following') thường chỉ cần đoán 1 lần.
+    """
+    default_order = [CALENDARS['odd'], CALENDARS['even']]
+    if not event_id:
+        return default_order
+    try:
+        extra = load_extra()
+    except Exception:
+        extra = {}
+
+    def _saved_for(eid):
+        if not eid:
+            return None
+        try:
+            return extra.get(eid, {}).get('calendar_id')
+        except Exception:
+            return None
+
+    saved = _saved_for(event_id)
+
+    # Instance chưa có calendar_id riêng → mượn calendar_id của master.
+    if saved not in default_order:
+        saved = _saved_for(_master_id_from_instance(event_id))
+
+    if saved in default_order:
+        return [saved] + [c for c in default_order if c != saved]
+    return default_order
+
+
+def _probe_event_on_calendars(event_id, calendar_order=None):
+    """FIX (mục 2): gọi events().get trên các calendar SONG SONG thay vì tuần tự.
+
+    Trước đây get_event/update_event/delete_event dò calendar theo kiểu nối tiếp:
+    thử ODD, nếu 404 mới thử EVEN → tốn thêm 1 round-trip mỗi khi đoán sai calendar.
+    Hàm này gọi cả 2 calendar cùng lúc bằng ThreadPool và trả về kết quả thô để
+    caller tự áp dụng logic quyết định CŨ (ưu tiên theo thứ tự) — hành vi không đổi,
+    chỉ bỏ được độ trễ tuần tự.
+
+    Trả về (order, results) với:
+      - order: danh sách calendar_id theo đúng thứ tự ưu tiên (giữ nguyên như cũ)
+      - results: dict {calendar_id: event_dict | Exception} — mỗi transport độc lập
+                 (_wr_http) nên an toàn khi chạy đa luồng.
+    """
+    order = list(calendar_order) if calendar_order else _resolve_calendar_order(event_id)
+
+    def _get(calendar_id):
+        return calendar_service.events().get(
+            calendarId=calendar_id,
+            eventId=event_id
+        ).execute(http=_wr_http())
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=len(order)) as executor:
+        futures = {executor.submit(_get, calendar_id): calendar_id for calendar_id in order}
+        for future in as_completed(futures):
+            calendar_id = futures[future]
+            try:
+                results[calendar_id] = future.result()
+            except Exception as e:  # giữ nguyên exception để caller phân loại 404/410/khác
+                results[calendar_id] = e
+    return order, results
+
+
 def handle_calendar_change(event_id, old_calendar_id, new_calendar_id, class_info, edit_mode, current_event=None):
     """
     Xử lý chuyển event từ calendar này sang calendar khác
@@ -371,19 +511,41 @@ def handle_calendar_change(event_id, old_calendar_id, new_calendar_id, class_inf
         
         print(f"📊 Event type: {'MASTER' if is_master_event else 'INSTANCE' if is_recurring_instance else 'SINGLE'}")
         
-        # 1. XÓA KHỎI CALENDAR CŨ
+        # 1. TÁCH KHỎI CALENDAR CŨ
+        #    ⚠️ FIX C2: TUYỆT ĐỐI không xóa master của chuỗi lặp (sẽ mất toàn bộ chuỗi).
+        #    - Master           → loại occurrence đang chuyển bằng EXDATE, giữ nguyên
+        #                         chuỗi ở calendar cũ.
+        #    - Instance / single → xóa an toàn (chỉ hủy occurrence đó / xóa event đơn).
         try:
-            calendar_service.events().delete(
-                calendarId=old_calendar_id,
-                eventId=event_id
-            ).execute()
-            print(f"✅ Deleted from old calendar")
-            
-            # Xóa extra data cũ
-            remove_extra(event_id)
-            
+            if is_master_event:
+                from recurrence_utils import add_exdate_to_master
+                occurrence_start = (current_event.get('start') or {}).get('dateTime')
+                updated_recurrence = (
+                    add_exdate_to_master(current_event, occurrence_start)
+                    if occurrence_start else None
+                )
+                if updated_recurrence:
+                    master_body = dict(current_event)
+                    master_body['recurrence'] = updated_recurrence
+                    calendar_service.events().update(
+                        calendarId=old_calendar_id,
+                        eventId=event_id,
+                        body=master_body
+                    ).execute(http=_wr_http())
+                    print(f"✅ Master giữ nguyên; đã EXDATE occurrence {occurrence_start}")
+                else:
+                    print("⚠️ Không dựng được EXDATE cho master → bỏ qua xóa để không phá chuỗi")
+            else:
+                calendar_service.events().delete(
+                    calendarId=old_calendar_id,
+                    eventId=event_id
+                ).execute(http=_wr_http())
+                print(f"✅ Deleted from old calendar")
+                # Xóa extra data cũ
+                remove_extra(event_id)
+
         except Exception as delete_error:
-            print(f"⚠️ Delete error (might be already moved): {delete_error}")
+            print(f"⚠️ Detach/delete error (might be already moved): {delete_error}")
         
         # 2. XỬ LÝ RECURRENCE THEO EDIT MODE
         timezone = validate_timezone(class_info.get('timezone', 'Asia/Ho_Chi_Minh'))
@@ -422,7 +584,7 @@ def handle_calendar_change(event_id, old_calendar_id, new_calendar_id, class_inf
         result = calendar_service.events().insert(
             calendarId=new_calendar_id,
             body=event_data
-        ).execute()
+        ).execute(http=_wr_http())
         
         new_event_id = result.get('id')
         print(f"✅ Created in new calendar: {new_event_id}")
@@ -585,8 +747,10 @@ def _fetch_single_calendar(calendar_id, time_min, time_max, extra):
     with _cache_lock:
         _calendar_sync_state[state_key] = {
             'events': event_map,
-            'sync_token': sync_token
+            'sync_token': sync_token,
+            'ts': time.time()
         }
+        _prune_sync_state_locked()
     return _decorate_events(event_map.values(), calendar_id, calendar_type_name, extra)
 
 
@@ -657,28 +821,28 @@ def get_event(event_id):
             
         print(f"🔍 Fetching single event: {event_id}")
         
-        # Thử tìm trên cả 2 calendars
+        # Thử tìm trên cả 2 calendars (dò SONG SONG — mục 2)
         found_event = None
         found_calendar = None
-        
-        for calendar_id, cal_type in [(CALENDARS['odd'], 'odd'), (CALENDARS['even'], 'even')]:
-            try:
-                event = calendar_service.events().get(
-                    calendarId=calendar_id,
-                    eventId=event_id
-                ).execute()
-                found_event = event
-                found_calendar = calendar_id
-                event['_calendar_source'] = cal_type
-                event['_calendar_id'] = calendar_id
-                print(f"✅ Found event in {cal_type.upper()} calendar")
-                break
-            except HttpError as e:
-                if e.resp.status == 404:
+
+        order, results = _probe_event_on_calendars(event_id)
+        for calendar_id in order:
+            res = results.get(calendar_id)
+            cal_type = get_calendar_type_by_id(calendar_id)
+            if isinstance(res, HttpError):
+                if res.resp.status == 404:
                     continue  # Không tìm thấy trong calendar này, thử calendar khác
-                else:
-                    raise  # Lỗi khác, raise lên
-        
+                raise res  # Lỗi khác, raise lên
+            if isinstance(res, Exception):
+                raise res
+            event = res
+            found_event = event
+            found_calendar = calendar_id
+            event['_calendar_source'] = cal_type
+            event['_calendar_id'] = calendar_id
+            print(f"✅ Found event in {cal_type.upper()} calendar")
+            break
+
         if not found_event:
             raise HttpError(resp=type('obj', (object,), {'status': 404})(), content=b'Event not found')
         
@@ -716,7 +880,8 @@ def create_event(class_info, idempotency_key=None):
         import pytz
 
         print(f"🎯 ========== CREATE EVENT ==========")
-        print(f"📥 Received class_info: {class_info}")
+        # FIX M10: không log full class_info (chứa passcode/zoom_link)
+        print(f"📥 Received class_info: name={class_info.get('name')} program={class_info.get('program')}")
 
         # 1️⃣ XÁC ĐỊNH TIMEZONE NGƯỜI DÙNG
         timezone = validate_timezone(class_info.get('timezone', 'Asia/Ho_Chi_Minh'))
@@ -773,24 +938,6 @@ def create_event(class_info, idempotency_key=None):
 
         print(f"✅ Event created in {'EVEN' if calendar_id == CALENDARS['even'] else 'ODD'} calendar")
 
-        # 9️⃣ TỰ ĐỘNG MOVE NẾU MÚI GIỜ THAY ĐỔI → GIỐNG FOLLOWING MODE
-        try:
-            new_dt_vn = datetime.fromisoformat(start_iso.replace('Z', '+00:00')).astimezone(pytz.timezone('Asia/Ho_Chi_Minh'))
-            new_hour_vn = new_dt_vn.hour
-            new_calendar_id = CALENDARS['even'] if new_hour_vn % 2 == 0 else CALENDARS['odd']
-
-            if new_calendar_id != calendar_id:
-                print(f"🔄 Timezone change detected → moving event to new calendar")
-                calendar_service.events().move(
-                    calendarId=calendar_id,
-                    eventId=event_id,
-                    destination=new_calendar_id
-                ).execute()
-                calendar_id = new_calendar_id
-                print(f"✅ Event moved to {'EVEN' if calendar_id == CALENDARS['even'] else 'ODD'} calendar")
-        except Exception as e:
-            print(f"⚠️ Could not auto-move event: {e}")
-
         return result
 
     except Exception as e:
@@ -813,18 +960,17 @@ def update_this_instance(instance_id, master_event_id, calendar_id, class_info):
     try:
         from datetime import datetime
         import pytz
-        from googleapiclient.errors import HttpError
 
         print(f"🎯 [GOOGLE] 'this' mode - Creating exception")
 
         # 1️⃣ Lấy instance và master
         instance = calendar_service.events().get(
             calendarId=calendar_id, eventId=instance_id
-        ).execute()
+        ).execute(http=_wr_http())
 
         master_event = calendar_service.events().get(
             calendarId=calendar_id, eventId=master_event_id
-        ).execute()
+        ).execute(http=_wr_http())
 
         instance_start = instance.get("start", {}).get("dateTime")
         if not instance_start:
@@ -842,15 +988,21 @@ def update_this_instance(instance_id, master_event_id, calendar_id, class_info):
                 calendarId=calendar_id,
                 eventId=master_event_id,
                 body=master_event
-            ).execute()
+            ).execute(http=_wr_http())
             print(f"✅ Master updated with EXDATE")
 
         # 3️⃣ Xóa instance cũ khỏi calendar
-        print(f"🗑️ Deleting old instance from series")
-        calendar_service.events().delete(
-            calendarId=calendar_id, eventId=instance_id
-        ).execute()
-        remove_extra(instance_id)
+        #    ⚠️ FIX C2: nếu instance_id == master_event_id nghĩa là đang sửa occurrence
+        #    đầu tiên của master → EXDATE ở trên đã loại trừ nó, TUYỆT ĐỐI không xóa
+        #    master (sẽ mất toàn bộ chuỗi lặp).
+        if instance_id != master_event_id:
+            print(f"🗑️ Deleting old instance from series")
+            calendar_service.events().delete(
+                calendarId=calendar_id, eventId=instance_id
+            ).execute(http=_wr_http())
+            remove_extra(instance_id)
+        else:
+            print("⏭️ Bỏ qua xóa: target là master (chuỗi được giữ qua EXDATE)")
 
         # 4️⃣ Tạo event mới độc lập
         print(f"🆕 Creating new independent event (detached from series)")
@@ -879,7 +1031,7 @@ def update_this_instance(instance_id, master_event_id, calendar_id, class_info):
 
         result = calendar_service.events().insert(
             calendarId=calendar_id, body=new_event, sendUpdates="all"
-        ).execute()
+        ).execute(http=_wr_http())
 
         new_event_id = result.get("id")
         print(f"✅ Created independent event: {new_event_id}")
@@ -912,7 +1064,7 @@ def update_this_instance(instance_id, master_event_id, calendar_id, class_info):
                     calendarId=calendar_id,
                     eventId=new_event_id,
                     destination=new_calendar_id
-                ).execute()
+                ).execute(http=_wr_http())
 
                 print(f"✅ Instance moved successfully to new calendar")
                 calendar_id = new_calendar_id
@@ -940,7 +1092,7 @@ def update_single_event(event_id, calendar_id, class_info):
         event = calendar_service.events().get(
             calendarId=calendar_id,
             eventId=event_id
-        ).execute()
+        ).execute(http=_wr_http())
 
         # 🧭 Chuẩn hóa timezone
         timezone = validate_timezone(class_info.get('timezone', 'Asia/Ho_Chi_Minh'))
@@ -1004,7 +1156,7 @@ def update_single_event(event_id, calendar_id, class_info):
             eventId=event_id,
             body=event,
             sendUpdates='all'
-        ).execute()
+        ).execute(http=_wr_http())
 
         # 🧩 Cập nhật dữ liệu mở rộng
         update_extra(
@@ -1039,46 +1191,42 @@ def update_event(event_id, class_info):
             if key.startswith('_'):
                 print(f"   - {key}: {value}")
         
-        # Find which calendar has this event
+        # Find which calendar has this event (dò SONG SONG — mục 2)
         current_event = None
         current_calendar_id = None
-        
-        for calendar_id in [CALENDARS['odd'], CALENDARS['even']]:
-            try:
-                event = calendar_service.events().get(
-                    calendarId=calendar_id,
-                    eventId=event_id
-                ).execute()
-                current_event = event
-                current_calendar_id = calendar_id
-                print(f"✅ Found in {'EVEN' if calendar_id == CALENDARS['even'] else 'ODD'} calendar")
-                break
-            except HttpError as e:
-                if e.resp.status == 404:
+
+        order, results = _probe_event_on_calendars(event_id)
+        for calendar_id in order:
+            res = results.get(calendar_id)
+            if isinstance(res, HttpError):
+                if res.resp.status == 404:
                     continue
-                else:
-                    raise
-        
-        # **THỬ TÌM BẰNG MASTER ID NẾU KHÔNG TÌM THẤY**
+                raise res
+            if isinstance(res, Exception):
+                raise res
+            current_event = res
+            current_calendar_id = calendar_id
+            print(f"✅ Found in {'EVEN' if calendar_id == CALENDARS['even'] else 'ODD'} calendar")
+            break
+
+        # **THỬ TÌM BẰNG MASTER ID NẾU KHÔNG TÌM THẤY** (dò SONG SONG — mục 2)
         if not current_event and class_info.get('master_event_id'):
             print(f"🔄 Event {event_id} not found, trying master ID: {class_info['master_event_id']}")
-            for calendar_id in [CALENDARS['odd'], CALENDARS['even']]:
-                try:
-                    event = calendar_service.events().get(
-                        calendarId=calendar_id,
-                        eventId=class_info['master_event_id']
-                    ).execute()
-                    current_event = event
-                    current_calendar_id = calendar_id
-                    event_id = class_info['master_event_id']  # Update to master ID
-                    print(f"✅ Found MASTER in {'EVEN' if calendar_id == CALENDARS['even'] else 'ODD'} calendar")
-                    break
-                except HttpError as e:
-                    if e.resp.status == 404:
+            master_order, master_results = _probe_event_on_calendars(class_info['master_event_id'])
+            for calendar_id in master_order:
+                res = master_results.get(calendar_id)
+                if isinstance(res, HttpError):
+                    if res.resp.status == 404:
                         continue
-                    else:
-                        raise
-        
+                    raise res
+                if isinstance(res, Exception):
+                    raise res
+                current_event = res
+                current_calendar_id = calendar_id
+                event_id = class_info['master_event_id']  # Update to master ID
+                print(f"✅ Found MASTER in {'EVEN' if calendar_id == CALENDARS['even'] else 'ODD'} calendar")
+                break
+
         if not current_event:
             raise ValueError(f"Event {event_id} not found in any calendar")
         # 🔍 Xác định master_event_id sớm
@@ -1204,7 +1352,7 @@ def handle_all_mode_for_single(event_id, calendar_id, class_info):
         calendar_service.events().delete(
             calendarId=calendar_id,
             eventId=event_id
-        ).execute()
+        ).execute(http=_wr_http())
         
         # Xóa extra data
         remove_extra(event_id)
@@ -1250,27 +1398,40 @@ def stop_recurrence_at_instance(master_event, instance_start_iso):
     ✅ Dừng chuỗi lặp hiện tại (master) trước instance được chọn.
     Sử dụng UNTIL= theo định dạng RFC5545: YYYYMMDDTHHMMSSZ
     """
-    import re
     import pytz
 
-    if not master_event.get("recurrence"):
+    recurrence = master_event.get("recurrence")
+    if not recurrence:
         return master_event
-
-    rrule_str = master_event["recurrence"][0].replace("RRULE:", "")
-    rrule_parts = rrule_str.split(";")
-
-    new_parts = []
-    for part in rrule_parts:
-        if not part.startswith("COUNT=") and not part.startswith("UNTIL="):
-            new_parts.append(part)
 
     # ⚙️ Chuẩn hóa UNTIL (RFC5545)
     dt = datetime.fromisoformat(instance_start_iso.replace("Z", "+00:00"))
     until_str = dt.astimezone(pytz.utc).strftime("%Y%m%dT%H%M%SZ")  # ✅ dạng hợp lệ
-    new_rrule = "RRULE:" + ";".join(new_parts + [f"UNTIL={until_str}"])
 
-    master_event["recurrence"] = [new_rrule]
-    print(f"🧩 stop_recurrence_at_instance → New RRULE: {new_rrule}")
+    # ⚠️ FIX M2: tìm ĐÚNG dòng RRULE (không giả định index 0) và GIỮ LẠI các dòng
+    #    khác (EXDATE/RDATE) — trước đây ghi đè recurrence = [new_rrule] làm mất hết
+    #    EXDATE nên các buổi đã loại trừ của chuỗi cũ xuất hiện lại sau khi split.
+    updated = []
+    rrule_found = False
+    for rule in recurrence:
+        if rule.startswith("RRULE:"):
+            rrule_found = True
+            rrule_parts = rule.replace("RRULE:", "").split(";")
+            new_parts = [
+                p for p in rrule_parts
+                if p and not p.startswith("COUNT=") and not p.startswith("UNTIL=")
+            ]
+            updated.append("RRULE:" + ";".join(new_parts + [f"UNTIL={until_str}"]))
+        else:
+            updated.append(rule)
+
+    if not rrule_found:
+        # Không tìm thấy RRULE (bất thường) → giữ nguyên để không phá dữ liệu
+        print("⚠️ stop_recurrence_at_instance: master không có RRULE, giữ nguyên")
+        return master_event
+
+    master_event["recurrence"] = updated
+    print(f"🧩 stop_recurrence_at_instance → recurrence: {updated}")
     return master_event
 
 
@@ -1286,17 +1447,16 @@ def update_following_events(instance_id, master_event_id, calendar_id, class_inf
     try:
         from datetime import datetime
         import pytz, re
-        from googleapiclient.errors import HttpError
 
         print("🎯 [FOLLOWING MODE - SPLIT SERIES] Starting...")
 
         # 1️⃣ Lấy instance và master
         instance = calendar_service.events().get(
             calendarId=calendar_id, eventId=instance_id
-        ).execute()
+        ).execute(http=_wr_http())
         master = calendar_service.events().get(
             calendarId=calendar_id, eventId=master_event_id
-        ).execute()
+        ).execute(http=_wr_http())
 
         if not instance or not master:
             raise ValueError("❌ Không tìm thấy instance hoặc master event")
@@ -1330,7 +1490,7 @@ def update_following_events(instance_id, master_event_id, calendar_id, class_inf
             calendarId=calendar_id,
             eventId=master_event_id,
             body=updated_master,
-        ).execute()
+        ).execute(http=_wr_http())
         print("✅ Old series updated (stopped before instance)")
 
         # 5️⃣ Tạo chuỗi mới bắt đầu từ instance này
@@ -1363,7 +1523,7 @@ def update_following_events(instance_id, master_event_id, calendar_id, class_inf
         print(f"🆕 Creating new series from instance {instance_start}")
         result = calendar_service.events().insert(
             calendarId=calendar_id, body=new_event, sendUpdates="all"
-        ).execute()
+        ).execute(http=_wr_http())
 
         new_event_id = result.get("id")
         print(f"✅ Created new master for following series: {new_event_id}")
@@ -1374,7 +1534,7 @@ def update_following_events(instance_id, master_event_id, calendar_id, class_inf
             calendar_service.events().delete(
                 calendarId=calendar_id,
                 eventId=instance_id
-            ).execute()
+            ).execute(http=_wr_http())
             print(f"✅ Old instance {instance_id} deleted successfully")
             remove_extra(instance_id)
         except Exception as e:
@@ -1401,7 +1561,7 @@ def update_following_events(instance_id, master_event_id, calendar_id, class_inf
                     calendarId=calendar_id,
                     eventId=new_event_id,
                     destination=new_calendar_id,
-                ).execute()
+                ).execute(http=_wr_http())
                 print(f"✅ New master moved to new calendar: {new_calendar_id}")
                 calendar_id = new_calendar_id
         except Exception as e:
@@ -1457,52 +1617,53 @@ def delete_event(event_id, delete_mode="this"):
             master_event_id = event_id
 
         # ==========================================================
-        # 🔍 TÌM EVENT THỰC TẾ TRÊN GOOGLE CALENDAR
+        # 🔍 TÌM EVENT THỰC TẾ TRÊN GOOGLE CALENDAR (dò SONG SONG — mục 2)
         # ==========================================================
-        for calendar_id in [CALENDARS["odd"], CALENDARS["even"]]:
-            try:
-                event = calendar_service.events().get(
-                    calendarId=calendar_id,
-                    eventId=event_id
-                ).execute()
-                current_event = event
+        order, results = _probe_event_on_calendars(event_id)
+        for calendar_id in order:
+            res = results.get(calendar_id)
+            # Trường hợp thường: tìm thấy event trực tiếp
+            if not isinstance(res, Exception):
+                current_event = res
                 current_calendar_id = calendar_id
                 break
-            except HttpError as e:
-                if e.resp.status in [404, 410]:
-                    # ✅ Google báo "Resource deleted" → ta tự dựng thông tin từ ID
-                    current_calendar_id = calendar_id
-                    try:
-                        parts = event_id.split("_")
-                        time_part = parts[-1].replace("Z", "")
-                        target_dt = datetime.strptime(time_part, "%Y%m%dT%H%M%S").astimezone(timezone.utc)
-                        print(f"🕐 Reconstructed target_dt from ID: {target_dt}")
-                    except Exception:
-                        target_dt = None
 
-                    # 🔎 Dò xem còn event nào có recurringEventId hoặc id tương tự
-                    try:
-                        print(f"🔎 Searching manually for {event_id} in {calendar_id} ...")
-                        resp = calendar_service.events().list(
-                            calendarId=calendar_id,
-                            showDeleted=False,
-                            maxResults=2500
-                        ).execute()
-                        items = resp.get("items", [])
-                        for ev in items:
-                            rid = ev.get("recurringEventId", "")
-                            eid = ev.get("id", "")
-                            if master_event_id in rid or master_event_id in eid:
-                                current_event = ev
-                                print(f"✅ Found similar recurring event: {eid}")
-                                break
-                        if current_event:
+            e = res
+            if isinstance(e, HttpError) and e.resp.status in [404, 410]:
+                # ✅ Google báo "Resource deleted" → ta tự dựng thông tin từ ID
+                current_calendar_id = calendar_id
+                try:
+                    parts = event_id.split("_")
+                    time_part = parts[-1].replace("Z", "")
+                    target_dt = datetime.strptime(time_part, "%Y%m%dT%H%M%S").astimezone(timezone.utc)
+                    print(f"🕐 Reconstructed target_dt from ID: {target_dt}")
+                except Exception:
+                    target_dt = None
+
+                # 🔎 Dò xem còn event nào có recurringEventId hoặc id tương tự
+                try:
+                    print(f"🔎 Searching manually for {event_id} in {calendar_id} ...")
+                    resp = calendar_service.events().list(
+                        calendarId=calendar_id,
+                        showDeleted=False,
+                        maxResults=2500,
+                        fields="nextPageToken,items(id,recurringEventId,summary,start)"
+                    ).execute(http=_wr_http())
+                    items = resp.get("items", [])
+                    for ev in items:
+                        rid = ev.get("recurringEventId", "")
+                        eid = ev.get("id", "")
+                        if master_event_id in rid or master_event_id in eid:
+                            current_event = ev
+                            print(f"✅ Found similar recurring event: {eid}")
                             break
-                    except Exception as scan_err:
-                        print(f"⚠️ Manual search failed: {scan_err}")
-                    continue
-                else:
-                    raise
+                    if current_event:
+                        break
+                except Exception as scan_err:
+                    print(f"⚠️ Manual search failed: {scan_err}")
+                continue
+            else:
+                raise e
 
         if not current_calendar_id:
             current_calendar_id = CALENDARS["odd"]
@@ -1548,7 +1709,7 @@ def delete_event(event_id, delete_mode="this"):
                 calendar_service.events().delete(
                     calendarId=current_calendar_id,
                     eventId=master_event_id
-                ).execute()
+                ).execute(http=_wr_http())
                 print(f"✅ Deleted master series from {deleted_from}")
                 remove_extra(master_event_id)
                 remove_extra(event_id)
@@ -1575,8 +1736,9 @@ def delete_event(event_id, delete_mode="this"):
                     calendarId=current_calendar_id,
                     eventId=master_event_id,
                     showDeleted=False,
-                    maxResults=2500
-                ).execute()
+                    maxResults=2500,
+                    fields="nextPageToken,items(id,start)"
+                ).execute(http=_wr_http())
                 instances = instances_resp.get("items", [])
                 print(f"📊 Found {len(instances)} instances under master {master_event_id}")
 
@@ -1592,7 +1754,7 @@ def delete_event(event_id, delete_mode="this"):
                         calendar_service.events().delete(
                             calendarId=current_calendar_id,
                             eventId=inst_id
-                        ).execute()
+                        ).execute(http=_wr_http())
                         remove_extra(inst_id)
                         deleted_count += 1
                         print(f"✅ Deleted instance {inst_id}")
@@ -1620,7 +1782,7 @@ def delete_event(event_id, delete_mode="this"):
                 calendar_service.events().delete(
                     calendarId=current_calendar_id,
                     eventId=event_id
-                ).execute()
+                ).execute(http=_wr_http())
                 print(f"✅ Deleted single event from {deleted_from}")
                 remove_extra(event_id)
                 return {"status": "deleted", "delete_mode": "this", "from_calendar": deleted_from}
@@ -1661,8 +1823,9 @@ def _fallback_delete_instance(master_id, old_event_id, summary, target_dt, calen
                         calendarId=cid,
                         showDeleted=False,
                         singleEvents=False,
-                        maxResults=2500
-                    ).execute()
+                        maxResults=2500,
+                        fields="nextPageToken,items(id,recurringEventId,summary,start)"
+                    ).execute(http=_wr_http())
                     items = resp.get("items", [])
                     for ev in items:
                         rid = ev.get("recurringEventId", "")
@@ -1673,7 +1836,7 @@ def _fallback_delete_instance(master_id, old_event_id, summary, target_dt, calen
                                 calendar_service.events().delete(
                                     calendarId=cid,
                                     eventId=eid
-                                ).execute()
+                                ).execute(http=_wr_http())
                                 remove_extra(eid)
                                 deleted_count += 1
                                 print(f"🗑️ Deleted {eid}")
@@ -1696,8 +1859,9 @@ def _fallback_delete_instance(master_id, old_event_id, summary, target_dt, calen
                     calendarId=cid,
                     showDeleted=False,
                     singleEvents=True,
-                    maxResults=2500
-                ).execute()
+                    maxResults=2500,
+                    fields="nextPageToken,items(id,recurringEventId,summary,start)"
+                ).execute(http=_wr_http())
                 items = resp.get("items", [])
                 for ev in items:
                     eid = ev.get("id", "")
@@ -1706,7 +1870,7 @@ def _fallback_delete_instance(master_id, old_event_id, summary, target_dt, calen
                         calendar_service.events().delete(
                             calendarId=cid,
                             eventId=eid
-                        ).execute()
+                        ).execute(http=_wr_http())
                         remove_extra(eid)
                         deleted_count += 1
                         print(f"🗑️ Deleted event by partial id: {eid}")
@@ -1728,8 +1892,9 @@ def _fallback_delete_instance(master_id, old_event_id, summary, target_dt, calen
                         calendarId=cid,
                         showDeleted=False,
                         singleEvents=True,
-                        maxResults=2500
-                    ).execute()
+                        maxResults=2500,
+                        fields="nextPageToken,items(id,recurringEventId,summary,start)"
+                    ).execute(http=_wr_http())
                     events = resp.get("items", [])
                     for ev in events:
                         eid = ev.get("id")
@@ -1744,7 +1909,7 @@ def _fallback_delete_instance(master_id, old_event_id, summary, target_dt, calen
                             calendar_service.events().delete(
                                 calendarId=cid,
                                 eventId=eid
-                            ).execute()
+                            ).execute(http=_wr_http())
                             remove_extra(eid)
                             deleted_count += 1
                             print(f"🗑️ Deleted event {eid}")

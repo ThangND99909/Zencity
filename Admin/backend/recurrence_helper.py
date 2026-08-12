@@ -1,4 +1,8 @@
 # backend/recurrence_helper.py
+from log_config import make_print
+
+print = make_print(__name__)
+
 
 def build_recurrence_rule(class_info):
     

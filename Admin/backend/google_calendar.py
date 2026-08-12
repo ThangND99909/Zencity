@@ -4,6 +4,9 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import google_auth_httplib2
 import httplib2
+from log_config import make_print
+
+print = make_print(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
@@ -47,8 +50,7 @@ CALENDAR_EVEN = '830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf
 
 CALENDARS = {
     'odd': CALENDAR_ODD,
-    'even': CALENDAR_EVEN,
-    'default': CALENDAR_ODD
+    'even': CALENDAR_EVEN
 }
 
 print("✅ Google Calendar API initialized")

@@ -12,6 +12,8 @@
   align-items: center;
   justify-content: center;
   z-index: 2000;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .deleteConfirmBox {
@@ -22,6 +24,7 @@
   width: 90%;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   animation: slideUp 0.3s ease;
+  box-sizing: border-box;
 }
 
 @keyframes slideUp {
@@ -140,4 +143,34 @@
 
 .deleteConfirmBtn.delete:hover {
   background: #b71c1c;
+}
+
+@media (max-width: 480px) {
+  .deleteConfirmOverlay {
+    align-items: flex-start;
+    padding: 8px;
+  }
+
+  .deleteConfirmBox {
+    width: 100%;
+    padding: 18px 14px;
+  }
+
+  .deleteConfirmHeader {
+    font-size: 18px;
+  }
+
+  .deleteOption {
+    align-items: flex-start;
+    padding: 10px;
+  }
+
+  .deleteConfirmActions {
+    flex-direction: column-reverse;
+  }
+
+  .deleteConfirmBtn {
+    width: 100%;
+    min-height: 44px;
+  }
 }
