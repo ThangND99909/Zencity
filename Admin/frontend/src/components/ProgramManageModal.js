@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import styles from "./ProgramManageModal.module.css";
 import { getPrograms, createProgram, updateProgram, deleteProgram } from "../services/api";
+import ModalShell from "./ModalShell";
+import ConfirmationDialog from "./ConfirmationDialog";
 
 export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }) {
   const [programs, setPrograms] = useState([]);
@@ -11,6 +13,7 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState(""); // 'success' | 'error'
+  const [programToDelete, setProgramToDelete] = useState(null);
 
   // Load programs khi modal mở
   useEffect(() => {
@@ -95,10 +98,6 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
   };
 
   const handleDeleteProgram = async (id) => {
-    if (!window.confirm("⚠️ Xác nhận xóa chương trình này?")) {
-      return;
-    }
-
     setLoading(true);
     try {
       await deleteProgram(id);
@@ -108,6 +107,7 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
       onProgramsUpdate && onProgramsUpdate();
       
       setTimeout(() => setMessage(""), 2000);
+      setProgramToDelete(null);
     } catch (error) {
       setMessage("❌ " + error.message);
       setMessageType("error");
@@ -128,16 +128,20 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
   if (!isOpen) return null;
 
   return (
-    <div className={styles.modalOverlay} data-modal="true" onClick={handleCancel}>
-      <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+    <ModalShell
+      title="Quản lý chương trình"
+      onClose={handleCancel}
+      closeOnBackdrop
+      panelClassName={styles.modalContent}
+    >
         <div className={styles.modalHeader}>
           <h2>📚 Quản lý chương trình</h2>
-          <button className={styles.closeBtn} onClick={handleCancel}>×</button>
+          <button className={styles.closeBtn} onClick={handleCancel} aria-label="Đóng cửa sổ quản lý chương trình">×</button>
         </div>
 
         {/* Message */}
         {message && (
-          <div className={`${styles.message} ${styles[messageType]}`}>
+          <div role={messageType === "error" ? "alert" : "status"} className={`${styles.message} ${styles[messageType]}`}>
             {message}
           </div>
         )}
@@ -148,6 +152,7 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
           <div className={styles.addForm}>
             <input
               type="text"
+              aria-label="Tên chương trình mới"
               placeholder="Nhập tên chương trình (vd: ASUS)"
               value={newProgramName}
               onChange={(e) => setNewProgramName(e.target.value)}
@@ -180,6 +185,7 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
                     <div className={styles.editForm}>
                       <input
                         type="text"
+                        aria-label={`Tên chương trình ${program.name}`}
                         value={editingName}
                         onChange={(e) => setEditingName(e.target.value)}
                         className={styles.input}
@@ -210,14 +216,16 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
                           disabled={loading}
                           className={styles.btnEdit}
                           title="Chỉnh sửa"
+                          aria-label={`Chỉnh sửa chương trình ${program.name}`}
                         >
                           ✏️
                         </button>
                         <button
-                          onClick={() => handleDeleteProgram(program.id)}
+                          onClick={() => setProgramToDelete(program)}
                           disabled={loading}
                           className={styles.btnDelete}
                           title="Xoá"
+                          aria-label={`Xóa chương trình ${program.name}`}
                         >
                           🗑️
                         </button>
@@ -236,7 +244,16 @@ export default function ProgramManageModal({ isOpen, onClose, onProgramsUpdate }
             ❌ Đóng
           </button>
         </div>
-      </div>
-    </div>
+      <ConfirmationDialog
+        isOpen={Boolean(programToDelete)}
+        title="Xóa chương trình"
+        message={`Bạn có chắc muốn xóa chương trình “${programToDelete?.name || ""}”?`}
+        confirmLabel="Xóa chương trình"
+        tone="danger"
+        busy={loading}
+        onCancel={() => setProgramToDelete(null)}
+        onConfirm={() => handleDeleteProgram(programToDelete.id)}
+      />
+    </ModalShell>
   );
 }

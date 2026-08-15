@@ -16,12 +16,12 @@
   overflow-y: auto;
 }
 
-.deleteConfirmBox {
+.deleteConfirmBox.deleteConfirmBox {
   background: white;
   border-radius: 12px;
-  padding: 24px;
-  max-width: 500px;
-  width: 90%;
+  padding: 20px;
+  width: min(100%, 520px);
+  max-width: 520px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   animation: slideUp 0.3s ease;
   box-sizing: border-box;
@@ -35,7 +35,7 @@
 .deleteConfirmHeader {
   font-size: 20px;
   font-weight: bold;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   color: #d32f2f;
   display: flex;
   align-items: center;
@@ -46,7 +46,7 @@
   background: #f8f9fa;
   padding: 12px;
   border-radius: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   border-left: 4px solid #d32f2f;
 }
 
@@ -62,13 +62,13 @@
 }
 
 .deleteOptions {
-  margin: 20px 0;
+  margin: 16px 0;
 }
 
 .deleteOption {
   display: flex;
   align-items: center;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid #ddd;
   border-radius: 8px;
   margin-bottom: 10px;
@@ -115,7 +115,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 24px;
+  margin-top: 18px;
 }
 
 .deleteConfirmBtn {
@@ -151,7 +151,7 @@
     padding: 8px;
   }
 
-  .deleteConfirmBox {
+  .deleteConfirmBox.deleteConfirmBox {
     width: 100%;
     padding: 18px 14px;
   }

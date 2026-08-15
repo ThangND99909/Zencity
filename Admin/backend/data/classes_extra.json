@@ -881,13 +881,6 @@
     "classname": "Room 6",
     "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
   },
-  "trtn8uufuoe2fs5brhfnkfrcmk": {
-    "zoom_link": "test.com",
-    "meeting_id": "111",
-    "passcode": "222",
-    "classname": "Room 3",
-    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
-  },
   "ngjn07ilvfr34kcqfcmr77og5g": {
     "zoom_link": "test.com",
     "meeting_id": "111",
@@ -928,6 +921,34 @@
     "meeting_id": "",
     "passcode": "fds",
     "classname": "Room test2",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "6a5dftb8drf5s1du4ru8t6bef0": {
+    "zoom_link": "fds",
+    "meeting_id": "",
+    "passcode": "fds",
+    "classname": "Room test1",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "b6d2807aec4e3d99950891ad5278d605": {
+    "zoom_link": "llkk",
+    "meeting_id": "22544",
+    "passcode": "452255",
+    "classname": "jjkkkk",
+    "calendar_id": "2c059c2a3847e37c0ad5e6f598661530724e12871532935903b05f291fca8b2a@group.calendar.google.com"
+  },
+  "5a2d8ba6fd29453f93055a476adae401": {
+    "zoom_link": "dfg",
+    "meeting_id": "2545",
+    "passcode": "44212",
+    "classname": "lkkj",
+    "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
+  },
+  "umal65aap3ukt0857qegnjku0c": {
+    "zoom_link": "dfg",
+    "meeting_id": "2545",
+    "passcode": "44212",
+    "classname": "lkkj",
     "calendar_id": "830f3e638fffdc912efe4f419697ea14635c8f0af19fc8fa6bee0a858d98dbf4@group.calendar.google.com"
   }
 }

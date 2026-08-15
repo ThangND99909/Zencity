@@ -2,7 +2,10 @@
 .container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
   font-family: "Roboto", "Segoe UI", sans-serif;
   background: #ffffff;
   color: #3c4043;
@@ -36,7 +39,7 @@
   color: #5f6368;
   border-radius: 4px;
   padding: 4px 8px;
-  transition: 0.2s;
+  transition: background-color 0.2s, box-shadow 0.2s;
 }
 .navBtn:hover {
   background: #f1f3f4;
@@ -99,6 +102,46 @@
 }
 .createButton:hover {
   background-color: #1669d6;
+}
+
+.calendarNotice {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(92vw, 560px);
+  padding: 12px 14px;
+  color: #991b1b;
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  transform: translateX(-50%);
+}
+
+.calendarNotice span { flex: 1; }
+.calendarNotice button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: #fee2e2;
+  cursor: pointer;
+}
+
+.mobileCreateButton {
+  display: none;
+  min-height: 42px;
+  padding: 9px 16px;
+  color: #ffffff;
+  background: #1a73e8;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* MINI CALENDAR */
@@ -212,10 +255,12 @@
   flex: 1;
   position: relative;
   background: #fff;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .timeline {
@@ -223,8 +268,10 @@
   flex: 1;
   position: relative;
   overflow-y: auto;
-  min-height: 100%;
-  height: 1440px; /* 24 giờ × 60px = 1440px */
+  min-height: 0;
+  height: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 /* TIME COLUMN */
@@ -298,7 +345,7 @@
   font-size: 12px;
   color: #202124;
   cursor: pointer;
-  transition: 0.2s;
+  transition: background-color 0.2s, box-shadow 0.2s;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   box-sizing: border-box;
   overflow: hidden;
@@ -354,6 +401,12 @@
 @media (max-width: 1024px) {
   .sidebar {
     display: none;
+  }
+
+  .mobileCreateButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
@@ -581,45 +634,8 @@
   margin-bottom: 15px;
 }
 
-.calendarBadgeDetail {
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: bold;
-}
-
-.badgeOdd {
-  background: #1a73e8;
-  color: white;
-}
-
-.badgeEven {
-  background: #34a853;
-  color: white;
-}
-
 .popupHeader {
   margin-bottom: 15px;
-}
-
-.calendarIndicator {
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: bold;
-  margin-top: 10px;
-}
-
-.indicatorOdd {
-  background: rgba(26, 115, 232, 0.2);
-  border: 2px solid #1a73e8;
-  color: #1a73e8;
-}
-
-.indicatorEven {
-  background: rgba(52, 168, 83, 0.2);
-  border: 2px solid #34a853;
-  color: #34a853;
 }
 
 .programSelect {
@@ -745,6 +761,29 @@
 
 .hourLine:hover {
   background-color: rgba(66, 133, 244, 0.1);
+}
+
+.formAlert {
+  padding: 10px 12px;
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.fieldError {
+  display: block;
+  margin-top: 4px;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.popupBox input[aria-invalid="true"],
+.popupBox select[aria-invalid="true"] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.1);
 }
 
 .btnSave:disabled,
@@ -1015,6 +1054,7 @@
   height: 100%;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
 }
 
 .weekViewHeader {
@@ -1403,6 +1443,12 @@
     transform: none;
   }
 
+  .mobileCreateButton {
+    order: 4;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
   .searchInput,
   .searchInput:focus {
     width: 100%;
@@ -1418,7 +1464,8 @@
   }
 
   .calendarMain {
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
   }
@@ -1500,7 +1547,8 @@
 
 @media (max-width: 480px) {
   .container {
-    min-height: 580px;
+    height: 100%;
+    min-height: 0;
   }
 
   .header {

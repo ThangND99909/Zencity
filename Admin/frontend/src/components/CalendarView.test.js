@@ -1,5 +1,4 @@
-import React from "react";
-import { act } from "react-dom/test-utils";
+import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import CalendarView from "./CalendarView";
 import {
@@ -30,7 +29,10 @@ describe("CalendarView edit lifecycle", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
-    getPrograms.mockResolvedValue([{ id: "program-1", name: "Program A" }]);
+    getPrograms.mockResolvedValue([
+      { id: "program-1", name: "Program A" },
+      { id: "esl_kids_and_junior", name: "ESL KIDS and JUNIOR" },
+    ]);
     getTimezones.mockResolvedValue({ timezones: [] });
     checkScheduleConflict.mockResolvedValue({ has_conflict: false, conflicts: [] });
     getEvent.mockReset();
@@ -47,13 +49,13 @@ describe("CalendarView edit lifecycle", () => {
     const start = new Date();
     start.setHours(9, 0, 0, 0);
     const end = new Date(start.getTime() + 60 * 60 * 1000);
-    const summary = "Class A - Teacher A - Program A";
+    const summary = "Class A - Teacher A - ESL KIDS and JUNIOR";
     const event = {
       id: "event-1",
       summary,
       classname: "Class A",
       teacher: "Teacher A",
-      program: "Program A",
+      program: "esl_kids_and_junior_",
       zoom_link: "https://zoom.example/test",
       start: { dateTime: start.toISOString(), timeZone: "Asia/Ho_Chi_Minh" },
       end: { dateTime: end.toISOString(), timeZone: "Asia/Ho_Chi_Minh" },
@@ -81,6 +83,12 @@ describe("CalendarView edit lifecycle", () => {
       eventName.parentElement.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
+    const detailDialog = container.querySelector('[role="dialog"]');
+    expect(detailDialog.textContent).toContain("Chương trình: ESL KIDS and JUNIOR");
+    expect(detailDialog.textContent).not.toContain("esl_kids_and_junior_");
+    expect(detailDialog.textContent).not.toContain("Calendar Lẻ");
+    expect(detailDialog.textContent).not.toContain("Calendar Chẵn");
+
     const editButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent.includes("Chỉnh sửa"));
     expect(editButton).toBeTruthy();
@@ -102,6 +110,7 @@ describe("CalendarView edit lifecycle", () => {
     });
 
     expect(onCreateEvent).toHaveBeenCalledTimes(1);
+    expect(onCreateEvent.mock.calls[0][0].program).toBe("esl_kids_and_junior");
     expect(container.textContent).not.toContain(`Chỉnh sửa: ${summary}`);
     expect(
       consoleError.mock.calls.some((args) =>
@@ -158,6 +167,59 @@ describe("CalendarView edit lifecycle", () => {
 
     expect(onCreateEvent).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain("Thêm sự kiện mới");
+  });
+
+  test("does not reuse an event card at a different vertical position when changing day", async () => {
+    const firstStart = new Date();
+    firstStart.setHours(9, 0, 0, 0);
+    const firstEnd = new Date(firstStart.getTime() + 60 * 60 * 1000);
+    const nextStart = new Date(firstStart);
+    nextStart.setDate(nextStart.getDate() + 1);
+    nextStart.setHours(18, 0, 0, 0);
+    const nextEnd = new Date(nextStart.getTime() + 60 * 60 * 1000);
+    const makeEvent = (id, summary, start, end) => ({
+      id,
+      summary,
+      classname: summary,
+      teacher: "Teacher",
+      program: "Program A",
+      start: { dateTime: start.toISOString(), timeZone: "Asia/Ho_Chi_Minh" },
+      end: { dateTime: end.toISOString(), timeZone: "Asia/Ho_Chi_Minh" },
+      _calendar_source: "odd",
+    });
+
+    await act(async () => {
+      root.render(
+        <CalendarView
+          events={[
+            makeEvent("day-one", "Day one event", firstStart, firstEnd),
+            makeEvent("day-two", "Day two event", nextStart, nextEnd),
+          ]}
+          onCreateEvent={jest.fn()}
+          onDeleteEvent={jest.fn()}
+          calendarFilter="both"
+        />
+      );
+      await flushPromises();
+    });
+
+    const dayButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent.trim() === "Ngày");
+    await act(async () => {
+      dayButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const firstCard = container.querySelector('[title*="Day one event"]');
+    expect(firstCard).toBeTruthy();
+
+    await act(async () => {
+      container.querySelector('[aria-label="Khoảng thời gian tiếp theo"]')
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const nextCard = container.querySelector('[title*="Day two event"]');
+    expect(nextCard).toBeTruthy();
+    expect(nextCard).not.toBe(firstCard);
   });
 
   test.each(["this", "following"])(
@@ -219,6 +281,8 @@ describe("CalendarView edit lifecycle", () => {
     });
 
     expect(container.textContent).toContain("Chọn cách chỉnh sửa");
+    expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(container.textContent).not.toContain("Chi tiết sự kiện");
     if (editMode === "following") {
       const followingRadio = container.querySelector('input[value="following"]');
       await act(async () => {
@@ -241,7 +305,29 @@ describe("CalendarView edit lifecycle", () => {
 
     expect(onCreateEvent).toHaveBeenCalledTimes(1);
     expect(onCreateEvent.mock.calls[0][0].edit_mode).toBe(editMode);
+    expect(onCreateEvent.mock.calls[0][0].start).toMatch(/\+07:00$/);
     expect(container.textContent).not.toContain(`Chỉnh sửa: ${summary}`);
+
+    if (editMode === "following") {
+      const updatedInstance = {
+        ...instance,
+        id: "new-master_20260815T040000Z",
+        recurringEventId: "new-master",
+        summary: "Updated recurring class",
+      };
+      await act(async () => {
+        root.render(
+          <CalendarView
+            events={[updatedInstance]}
+            onCreateEvent={onCreateEvent}
+            onDeleteEvent={jest.fn()}
+            calendarFilter="both"
+          />
+        );
+        await flushPromises();
+      });
+      expect(container.textContent).toContain("Updated recurring class");
+    }
     }
   );
 });

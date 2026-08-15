@@ -1,6 +1,7 @@
 // frontend/src/components/EditRecurringModal.js
 import { useState } from "react";
 import styles from "./EditRecurringModal.module.css";
+import ModalShell from "./ModalShell";
 
 export default function EditRecurringModal({
   event,
@@ -16,8 +17,12 @@ export default function EditRecurringModal({
   if (!event) return null;
 
   return (
-    <div className={styles.editRecurringOverlay}>
-      <div className={styles.editRecurringBox}>
+    <ModalShell
+      title="Chỉnh sửa sự kiện lặp lại"
+      description="Chọn phạm vi các sự kiện cần chỉnh sửa"
+      onClose={onCancel}
+      panelClassName={styles.editRecurringBox}
+    >
         <div className={styles.editOptions}>
           <p><strong>Chọn cách chỉnh sửa:</strong></p>
           
@@ -74,7 +79,6 @@ export default function EditRecurringModal({
             Tiếp tục chỉnh sửa
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

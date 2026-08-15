@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import styles from "./PasscodeModal.module.css";
+import ModalShell from "./ModalShell";
 
 export default function PasscodeModal({ isOpen, onSubmit }) {
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     // Reset khi modal mở
@@ -15,8 +17,7 @@ export default function PasscodeModal({ isOpen, onSubmit }) {
   }, [isOpen]);
 
   const handleInputChange = (e) => {
-    const value = e.target.value.replace(/[^0-9]/g, ""); // Chỉ cho phép số
-    setPasscode(value);
+    setPasscode(e.target.value);
     setError("");
   };
 
@@ -40,34 +41,46 @@ export default function PasscodeModal({ isOpen, onSubmit }) {
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter" && !isLoading) {
-      handleSubmit(e);
-    }
-  };
-
   if (!isOpen) return null;
 
   return (
-    <div className={styles.modalOverlay}>
-      <div className={styles.modalContent}>
+    <ModalShell
+      title="Đăng nhập quản trị"
+      description="Nhập passcode để truy cập lịch quản trị"
+      panelClassName={styles.modalContent}
+      initialFocusRef={inputRef}
+    >
         <h2>Nhập Passcode</h2>
         <p>Vui lòng nhập passcode để truy cập Lịch Admin</p>
         
       <form onSubmit={handleSubmit} className={styles.form}>
           <input
+            type="text"
+            name="username"
+            value="admin"
+            readOnly
+            tabIndex={-1}
+            autoComplete="username"
+            className={styles.srOnly}
+            aria-hidden="true"
+          />
+          <input
+            ref={inputRef}
             type="password"
-            placeholder="🔐 Nhập mã bảo vệ (4-6 số)"
+            aria-label="Passcode quản trị"
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "passcode-error" : undefined}
+            autoComplete="current-password"
+            placeholder="🔐 Nhập mã truy cập"
             value={passcode}
             onChange={handleInputChange}
-            onKeyPress={handleKeyPress}
-            maxLength="6"
+            maxLength="64"
             disabled={isLoading}
             autoFocus
             className={error ? styles.inputError : ""}
           />
           
-          {error && <div className={styles.errorMessage}>{error}</div>}
+          {error && <div id="passcode-error" role="alert" className={styles.errorMessage}>{error}</div>}
           
           <button 
             type="submit" 
@@ -77,7 +90,6 @@ export default function PasscodeModal({ isOpen, onSubmit }) {
             {isLoading ? "Đang kiểm tra..." : "Xác nhận"}
           </button>
         </form>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

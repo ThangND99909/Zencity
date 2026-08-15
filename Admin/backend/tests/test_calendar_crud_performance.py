@@ -142,6 +142,61 @@ class CalendarUpdateTests(unittest.TestCase):
         update_kwargs = self.service.events.return_value.update.call_args.kwargs
         self.assertEqual(update_kwargs["sendUpdates"], "all")
 
+    def test_following_update_keeps_naive_local_time_in_selected_timezone(self):
+        instance = {
+            "id": "master_20260820T080000Z",
+            "recurringEventId": "master",
+            "start": {"dateTime": "2026-08-20T15:00:00+07:00"},
+            "end": {"dateTime": "2026-08-20T16:00:00+07:00"},
+        }
+        master = {
+            "id": "master",
+            "summary": "Old series",
+            "start": {
+                "dateTime": "2026-08-13T15:00:00+07:00",
+                "timeZone": "Asia/Ho_Chi_Minh",
+            },
+            "recurrence": ["RRULE:FREQ=WEEKLY;COUNT=5;BYDAY=TH"],
+        }
+        master_request = MagicMock()
+        master_request.execute.return_value = master
+        self.service.events.return_value.get.return_value = master_request
+        insert_request = MagicMock()
+        insert_request.execute.return_value = {"id": "new-master"}
+        self.service.events.return_value.insert.return_value = insert_request
+        self.service.events.return_value.update.return_value.execute.return_value = master
+        self.service.events.return_value.delete.return_value.execute.return_value = None
+        class_info = {
+            "name": "Updated series",
+            "classname": "Class A",
+            "teacher": "Teacher A",
+            "program": "Program A",
+            "zoom_link": "https://zoom.example/test",
+            "meeting_id": "123",
+            "passcode": "secret",
+            "start": "2026-08-20T15:00:00",
+            "end": "2026-08-20T16:00:00",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "recurrence": "WEEKLY",
+            "repeat_count": 3,
+            "byday": ["TH"],
+        }
+
+        with patch.object(
+            self.crud, "determine_calendar_by_hour", return_value="calendar-odd"
+        ), patch.object(self.crud, "update_extra"), patch.object(self.crud, "remove_extra"):
+            self.crud.update_following_events(
+                instance["id"],
+                master["id"],
+                "calendar-odd",
+                class_info,
+                current_event=instance,
+            )
+
+        inserted_body = self.service.events.return_value.insert.call_args.kwargs["body"]
+        self.assertEqual(inserted_body["start"]["dateTime"], "2026-08-20T15:00:00+07:00")
+        self.assertEqual(inserted_body["end"]["dateTime"], "2026-08-20T16:00:00+07:00")
+
     def test_recurring_instance_is_detached_without_redundant_delete(self):
         instance = {
             "id": "master_20260813T010000Z",

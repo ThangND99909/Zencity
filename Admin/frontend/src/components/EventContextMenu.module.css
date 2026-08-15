@@ -41,6 +41,11 @@
 }
 
 .contextMenuItem {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
   padding: 10px 16px;
   cursor: pointer;
   display: flex;
@@ -71,6 +76,12 @@
   background: #fff8e1;
   border-top: 1px solid #ffecb3;
   border-radius: 0 0 8px 8px;
+}
+
+.contextMenuItem:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+  background-color: #eef4ff;
 }
 
 @media (max-width: 480px) {

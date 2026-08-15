@@ -20,6 +20,21 @@ const safeFetch = async (fn, retries = 3, delay = 5000) => {
   }
 };
 const API_URL = process.env.REACT_APP_BACKEND_URL || "https://zencity-backend.onrender.com";
+const AUTH_TOKEN_KEY = "zencity_admin_session";
+
+export const getAuthToken = () => {
+  try {
+    return sessionStorage.getItem(AUTH_TOKEN_KEY) || "";
+  } catch (_) {
+    return "";
+  }
+};
+
+export const clearAuthToken = () => {
+  try {
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch (_) {}
+};
 
 const createRequestId = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -35,10 +50,10 @@ const apiClient = axios.create({
   }
 });
 
-// Request interceptor để log requests
 apiClient.interceptors.request.use(
   (config) => {
-    console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, config.data || config.params);
+    const token = getAuthToken();
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
   (error) => {
@@ -49,18 +64,17 @@ apiClient.interceptors.request.use(
 
 // Response interceptor để xử lý errors
 apiClient.interceptors.response.use(
-  (response) => {
-    console.log(`✅ ${response.status} ${response.config.url}`);
-    return response;
-  },
+  (response) => response,
   (error) => {
-    console.error('❌ Response error:', error.response?.data || error.message);
-    
     // Xử lý các loại error phổ biến
     if (error.response) {
       // Server trả về error status (4xx, 5xx)
       const serverError = error.response.data;
       error.message = serverError.detail || serverError.message || `Server error: ${error.response.status}`;
+      if (error.response.status === 401 && error.config?.url !== "/auth/login") {
+        clearAuthToken();
+        window.dispatchEvent(new CustomEvent("zencity:auth-required"));
+      }
     } else if (error.request) {
       // Request được gửi nhưng không nhận được response
       error.message = "Cannot connect to server. Please check your connection.";
@@ -72,6 +86,24 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export const verifyPasscode = async (passcode) => {
+  const response = await apiClient.post("/auth/login", { passcode });
+  const token = response.data?.access_token;
+  if (!token) throw new Error("Máy chủ không trả về phiên đăng nhập hợp lệ");
+  sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+  return response.data;
+};
+
+export const verifySession = async () => {
+  if (!getAuthToken()) return false;
+  try {
+    const response = await apiClient.get("/auth/session");
+    return response.data?.authenticated === true;
+  } catch (_) {
+    return false;
+  }
+};
 
 const getDefaultCalendarWindow = () => {
   const now = new Date();
@@ -109,7 +141,6 @@ export const addClass = async (data) => {
 
   try {
     return await safeFetch(async () => {
-      console.log("📤 Sending class data to backend:", requestData);
       const res = await apiClient.post(`/classes`, requestData, {
         headers: { "Idempotency-Key": requestId }
       });

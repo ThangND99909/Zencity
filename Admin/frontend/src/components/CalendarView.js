@@ -10,6 +10,8 @@ import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import EventContextMenu from "./EventContextMenu";
 import EditRecurringModal from "./EditRecurringModal";
 import ProgramManageModal from "./ProgramManageModal";
+import ModalShell from "./ModalShell";
+import ConfirmationDialog from "./ConfirmationDialog";
 import moment from "moment-timezone";
 
 
@@ -18,6 +20,9 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPopup, setShowPopup] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
+  const [conflictConfirmation, setConflictConfirmation] = useState(null);
+  const [calendarNotice, setCalendarNotice] = useState("");
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showDetailPopup, setShowDetailPopup] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
@@ -83,11 +88,30 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   };
 
   // ✅ HELPER: GET PROGRAM NAME FROM ID
+  const normalizeProgramKey = (value) => String(value || "")
+    .trim()
+    .toLocaleLowerCase("vi")
+    .replace(/[^a-z0-9]/g, "");
+
+  const getProgramOption = (programValue) => {
+    const key = normalizeProgramKey(programValue);
+    if (!key) return null;
+    return programOptions.find(option =>
+      normalizeProgramKey(option.value) === key || normalizeProgramKey(option.label) === key
+    ) || null;
+  };
+
   const getProgramNameFromId = (programId) => {
     if (!programId) return "";
-    const program = programOptions.find(p => p.value === programId);
-    return program ? program.label : programId;
+    const program = getProgramOption(programId);
+    if (program) return program.label;
+    return String(programId)
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   };
+
+  const getProgramValue = (programValue) => getProgramOption(programValue)?.value || programValue || "";
 
   // 📌 LOAD PROGRAMS FROM API
   useEffect(() => {
@@ -232,7 +256,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
 
   const handleConfirmDelete = async (deleteMode = 'this') => {
     if (!eventToDelete || !eventToDelete.id) {
-      alert("Không thể xóa: thiếu ID sự kiện");
+      setCalendarNotice("Không thể xóa vì sự kiện đang thiếu mã định danh.");
       setShowDeleteModal(false);
       return;
     }
@@ -241,7 +265,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       // **THAY ĐỔI: Tạo object delete request với mode**
       const deleteRequest = {
         ...eventToDelete,
-        deleteMode: deleteMode  // Thêm deleteMode vào object
+        deleteMode: deleteMode,
+        _confirmed: true
       };
       
       console.log("📦 FINAL DELETE REQUEST OBJECT:", deleteRequest);
@@ -255,17 +280,22 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       
     } catch (error) {
       console.error("❌ Error deleting event:", error);
-      alert("❌ Lỗi khi xóa sự kiện: " + error.message);
+      setCalendarNotice("Lỗi khi xóa sự kiện: " + error.message);
       setShowDeleteModal(false);
     }
   };
 
   const handleEditEvent = async (event) => {
     if (!event.id) {
-      alert("Không thể chỉnh sửa: thiếu ID sự kiện");
+      setCalendarNotice("Không thể chỉnh sửa vì sự kiện đang thiếu mã định danh.");
       return;
     }
     
+    // Close the detail dialog before recurrence lookup opens the next dialog.
+    // Keeping both mounted makes the later-rendered detail dialog cover the
+    // edit-scope selector.
+    setShowDetailPopup(false);
+
     try {
       
       
@@ -391,7 +421,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         title: event.name,
         class_name: event.class_name || event.classname || "",
         teacher: event.teacher,
-        program: event.program,
+        program: getProgramValue(event.program),
         zoom_link: event.zoom,
         meeting_id: event.meeting_id || "",
         passcode: event.passcode || "",
@@ -443,7 +473,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       
     } catch (error) {
       console.error("❌ Error preparing edit:", error);
-      alert("Không thể chuẩn bị dữ liệu chỉnh sửa: " + error.message);
+      setCalendarNotice("Không thể chuẩn bị dữ liệu chỉnh sửa: " + error.message);
     }
   };
 
@@ -454,7 +484,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     const { event, originalEvent } = editRecurringOptions;
     
     if (!event) {
-      alert("Không có dữ liệu sự kiện để chỉnh sửa");
+      setCalendarNotice("Không có dữ liệu sự kiện để chỉnh sửa.");
       return;
     }
 
@@ -914,18 +944,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     };
   };
 
-  // ✅ THÊM HÀM KIỂM TRA GIỜ CHẴN LẺ ĐỂ HIỂN THỊ THÔNG BÁO
-  const checkEvenOddHour = (datetimeString) => {
-    if (!datetimeString) return 'unknown';
-    try {
-      const dt = new Date(datetimeString);
-      const hour = dt.getHours();
-      return hour % 2 === 0 ? 'even' : 'odd';
-    } catch {
-      return 'unknown';
-    }
-  };
-
   const parseRecurrenceRule = (ruleString) => {
     if (!ruleString) {
       return { recurrenceType: "", repeatCount: 1, byday: [], bymonthday: [], bymonth: [] };
@@ -1029,7 +1047,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
 
 
   const [masterEventsCache, setMasterEventsCache] = useState({});
-  const [viewMode, setViewMode] = useState("week"); // "day" | "week" | "month"
+  const [viewMode, setViewMode] = useState(() => window.innerWidth <= 768 ? "day" : "week");
 
   const parseRecurrenceFromEvent = async (cls) => {
     console.log("🔍 [RECURRENCE DEBUG] Checking event:", {
@@ -1151,9 +1169,11 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
           console.log("📤 formatForBackend (UTC):", datetimeLocal, "(", timezone, ") →", utcISO);
           return utcISO;
       } else {
-          // Gửi local ISO + timezone, giữ UTC để Google Calendar hiển thị đúng
+          // Keep the local wall-clock value but include its UTC offset. A naive
+          // ISO string is interpreted as the server timezone and can move a
+          // recurring event to another hour or day after a following update.
           const localISO = moment.tz(datetimeLocal, timezone)
-              .format("YYYY-MM-DDTHH:mm:ss");
+              .format("YYYY-MM-DDTHH:mm:ssZ");
           console.log("📤 formatForBackend (local):", datetimeLocal, "(", timezone, ") →", localISO);
           return localISO;
       }
@@ -1174,12 +1194,10 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
               message += `   🕒 ${startTime} - ${endTime}\n\n`;
           });
           
-          message += `Bạn muốn:\n`;
-          message += `• "OK" - VẪN tạo sự kiện (có xung đột)\n`;
-          message += `• "Cancel" - HỦY và chọn thời gian khác\n`;
+          message += `Nếu tiếp tục, sự kiện vẫn sẽ được lưu dù đang trùng lịch.`;
       } else {
           message += `✅ Không có xung đột với giáo viên "${currentTeacher}"\n\n`;
-          message += `"OK" để tiếp tục tạo sự kiện.`;
+          message += `Bạn có thể tiếp tục lưu sự kiện.`;
       }
       
       return message;
@@ -1202,10 +1220,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     
     console.log(`🕐 User timezone: ${userTimezone}, using: ${defaultTimezone}`);
     
-    // ✅ THÊM THÔNG BÁO VỀ CALENDAR SẼ ĐƯỢC CHỌN
-    const hourType = checkEvenOddHour(start.toISOString());
-    const targetCalendar = hourType === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ';
-    
     const defaultEvent = {
       title: "",
       class_name: "",
@@ -1226,9 +1240,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       bymonth: [],
       timezone: defaultTimezone,
       recurrence_description: "",
-      // ✅ THÊM THÔNG TIN CALENDAR
-      hour_type: hourType,
-      target_calendar: targetCalendar,
       // Thêm trường tạm thời
       _monthly_input: "",
       _yearly_month_input: "",
@@ -1240,18 +1251,10 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     setShowPopup(true);
   };
 
-  const performSave = async () => {
+  const performSave = async ({ skipConflictCheck = false } = {}) => {
     if (!newEvent) {
       throw new Error("Không có dữ liệu sự kiện để lưu");
     }
-
-    console.log("🔥 [GOOGLE] SAVE EVENT - Edit mode:", newEvent.editMode);
-    console.log("📊 newEvent object:", {
-      editMode: newEvent?.editMode,
-      id: newEvent?.id,
-      keys: Object.keys(newEvent || {}),
-      hasEditMode: 'editMode' in (newEvent || {})
-    });
 
     const isSingleEvent = !editingEvent?.recurrence && !editingEvent?.recurringEventId;
     const wantsRecurrence = newEvent?.recurrence && newEvent.recurrence.trim() !== "";
@@ -1284,31 +1287,35 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       
       setNewEvent(updatedEvent);
     }
-    console.log("🔥 DEBUG handleSave - CURRENT TIMEZONE:", {
-      timezone: newEvent?.timezone,
-      fullState: newEvent
-    });
-    
-    if (!newEvent.class_name || newEvent.class_name.trim() === "") {
-      alert("Vui lòng nhập tên lớp học!");
+    const errors = {};
+    if (!newEvent.class_name?.trim()) errors.class_name = "Vui lòng nhập tên lớp học.";
+    if (!newEvent.teacher?.trim()) errors.teacher = "Vui lòng nhập tên giáo viên.";
+    if (!newEvent.program?.trim()) errors.program = "Vui lòng chọn chương trình.";
+    if (!newEvent.zoom_link?.trim()) errors.zoom_link = "Vui lòng nhập liên kết Zoom.";
+    const startTime = new Date(newEvent.start);
+    const endTime = new Date(newEvent.end);
+    if (endTime <= startTime) errors.end = "Thời gian kết thúc phải sau thời gian bắt đầu.";
+    if (newEvent.recurrence === "WEEKLY" && !newEvent.byday?.length) {
+      errors.recurrence = "Vui lòng chọn ít nhất một ngày trong tuần.";
+    }
+    if (newEvent.recurrence === "MONTHLY" && !newEvent.bymonthday?.length) {
+      errors.recurrence = "Vui lòng nhập ít nhất một ngày trong tháng.";
+    }
+    if (newEvent.recurrence === "YEARLY" && (!newEvent.bymonth?.length || !newEvent.bymonthday?.length)) {
+      errors.recurrence = "Vui lòng chọn ít nhất một tháng và một ngày cho lịch hằng năm.";
+    }
+    if (Object.keys(errors).length) {
+      setFormErrors(errors);
+      const firstField = Object.keys(errors)[0];
+      requestAnimationFrame(() => document.getElementById(`event-${firstField}`)?.focus());
       return;
     }
-    if (!newEvent.teacher || newEvent.teacher.trim() === "") {
-      alert("Vui lòng nhập tên giáo viên!");
-      return;
-    }
-    if (!newEvent.program || newEvent.program.trim() === "") {
-      alert("Vui lòng chọn tên chương trình!");
-      return;
-    }
-    if (!newEvent.zoom_link || newEvent.zoom_link.trim() === "") {
-      alert("Vui lòng nhập liên kết Zoom!");
-      return;
-    }
+
+    setFormErrors({});
     
     // 🔹 Chỉ gửi ISO chuẩn UTC (cực kỳ quan trọng)
     // 🔍 KIỂM TRA XUNG ĐỘT TRƯỚC KHI LƯU
-    if (newEvent.teacher && newEvent.teacher.trim() !== "") {
+    if (!skipConflictCheck && newEvent.teacher && newEvent.teacher.trim() !== "") {
       try {
         console.log("🛡️ Checking for schedule conflicts...");
         
@@ -1322,53 +1329,16 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         // XỬ LÝ KẾT QUẢ AI
         if (conflictResult.has_conflict) {
           const conflictMessage = createConflictMessage(conflictResult, newEvent.teacher);
-          const userConfirmed = window.confirm(conflictMessage);
-          if (!userConfirmed) return; // Không có alert thêm
+          setConflictConfirmation({ message: conflictMessage });
+          return;
         }
       } catch (error) {
-        alert(`❌ LỖI CHECK CONFLICT:\n\nStatus: ${error.response?.status}\nMessage: ${error.response?.data?.detail || error.message}`);
+        setFormErrors({ general: `Không thể kiểm tra xung đột: ${error.response?.data?.detail || error.message}` });
         console.error("❌ Error during conflict check:", error.response?.data || error);
       }
     }
 
-    const startTime = new Date(newEvent.start);
-    const endTime = new Date(newEvent.end);
-    
-    if (endTime <= startTime) {
-      alert("Thời gian kết thúc phải LỚN HƠN thời gian bắt đầu!");
-      return;
-    }
-
-    if (newEvent.recurrence && newEvent.recurrence.trim() !== "") {
-      if (newEvent.recurrence === "WEEKLY" && (!newEvent.byday || newEvent.byday.length === 0)) {
-        alert("Vui lòng chọn ít nhất một ngày trong tuần cho lịch lặp hàng tuần!");
-        return;
-      }
-
-      if (newEvent.recurrence === "MONTHLY" && (!newEvent.bymonthday || newEvent.bymonthday.length === 0)) {
-        alert("Vui lòng nhập ít nhất một ngày trong tháng cho lịch lặp hàng tháng!");
-        return;
-      }
-
-      if (newEvent.recurrence === "YEARLY") {
-        if (!newEvent.bymonth || newEvent.bymonth.length === 0) {
-          alert("Vui lòng nhập ít nhất một tháng cho lịch lặp hàng năm!");
-          return;
-        }
-        if (!newEvent.bymonthday || newEvent.bymonthday.length === 0) {
-          alert("Vui lòng nhập ít nhất một ngày cho lịch lặp hàng năm!");
-          return;
-        }
-      }
-    }
-
-    console.log("🔥 DEBUG FRONTEND BEFORE UPDATE:");
-    console.log(" - newEvent.timezone:", newEvent.timezone);
-    console.log(" - selected timezone:", timezoneOptions.find(tz => tz.value === newEvent.timezone)?.label);
-
     const finalTimezone = newEvent?.timezone || "Asia/Ho_Chi_Minh";
-  
-    console.log("🔥 FINAL TIMEZONE FOR SAVE:", finalTimezone);
     // 🕐 Xác định xem người dùng có đổi timezone thực sự không
     const timezoneChanged =
       editingEvent && newEvent.timezone && editingEvent.timezone !== newEvent.timezone;
@@ -1384,14 +1354,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       finalTimezone,
       timezoneChanged
     );
-
-    console.log("🕓 Timezone change detected:", timezoneChanged);
-    console.log("📤 Sending to backend:", {
-      startForBackend,
-      endForBackend,
-      finalTimezone,
-      convertToUTC: timezoneChanged,
-    });
 
     // ✅ Gói dữ liệu gửi backend
     const eventData = {
@@ -1426,10 +1388,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       eventData.master_event_id = newEvent.master_event_id;
     }
     
-    console.log("🎯 [GOOGLE] FINAL DATA:", eventData);
-
-    
-
     if (onCreateEvent) {
       await onCreateEvent(eventData);
     } else {
@@ -1441,13 +1399,13 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     setNewEvent(null);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (skipConflictCheck = false) => {
     if (savingRef.current || !newEvent) return;
 
     savingRef.current = true;
     setIsSaving(true);
     try {
-      await performSave();
+      await performSave({ skipConflictCheck });
     } catch (error) {
       console.error("❌ Failed to save event:", error);
     } finally {
@@ -1481,17 +1439,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (showPopup) {
-      console.log("📝 POPUP STATE:", {
-        newEvent,
-        editingEvent,
-        hasId: !!newEvent?.id,
-        idValue: newEvent?.id
-      });
-    }
-  }, [showPopup, newEvent, editingEvent]);
-
   const handleDateTimeChange = (field, value) => {
     if (!newEvent) return;
 
@@ -1515,7 +1462,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       const newStart = newEvent.start;
       
       if (newStart && newEnd <= newStart) {
-        alert("Thời gian kết thúc phải LỚN HƠN thời gian bắt đầu!");
+        setFormErrors(prev => ({ ...prev, end: "Thời gian kết thúc phải sau thời gian bắt đầu." }));
         return;
       }
       
@@ -1525,10 +1472,16 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
 
   return (
     <div className={styles.container}>
+      {calendarNotice && (
+        <div className={styles.calendarNotice} role="alert">
+          <span>{calendarNotice}</span>
+          <button type="button" onClick={() => setCalendarNotice("")} aria-label="Đóng thông báo">×</button>
+        </div>
+      )}
       <div className={styles.header}>
         <div className={styles.leftHeader}>
-          <button onClick={() => changeDate(-1)} className={styles.navBtn}>‹</button>
-          <button onClick={() => changeDate(1)} className={styles.navBtn}>›</button>
+          <button onClick={() => changeDate(-1)} className={styles.navBtn} aria-label="Khoảng thời gian trước">‹</button>
+          <button onClick={() => changeDate(1)} className={styles.navBtn} aria-label="Khoảng thời gian tiếp theo">›</button>
           <button onClick={() => setSelectedDate(today)} className={styles.todayBtn}>Hôm nay</button>
           <div className={styles.headerDate}>
             {viewMode === "day" && formatHeaderDate(selectedDate)}
@@ -1539,11 +1492,12 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         <div className={styles.searchBar} ref={searchBarRef}>
           <input
             type="text"
-            placeholder="🔍 Tìm theo tên lớp, giáo viên, chương trình..."
+            placeholder="🔍 Tìm lớp, giáo viên, chương trình…"
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setShowSuggestions(true); }}
             onFocus={() => setShowSuggestions(true)}
             className={styles.searchInput}
+            aria-label="Tìm kiếm lớp học, giáo viên hoặc chương trình"
           />
           {searchQuery && (
             <button
@@ -1594,26 +1548,36 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
           )}
         </div>
         {/* ✅ View Mode Selector */}
-        <div className={styles.viewSelector}>
+        <div className={styles.viewSelector} aria-label="Chế độ xem lịch">
           <button
             className={`${styles.viewBtn} ${viewMode === "day" ? styles.viewBtnActive : ""}`}
             onClick={() => setViewMode("day")}
+            aria-pressed={viewMode === "day"}
           >
             Ngày
           </button>
           <button
             className={`${styles.viewBtn} ${viewMode === "week" ? styles.viewBtnActive : ""}`}
             onClick={() => setViewMode("week")}
+            aria-pressed={viewMode === "week"}
           >
             Tuần
           </button>
           <button
             className={`${styles.viewBtn} ${viewMode === "month" ? styles.viewBtnActive : ""}`}
             onClick={() => setViewMode("month")}
+            aria-pressed={viewMode === "month"}
           >
             Tháng
           </button>
         </div>
+        <button
+          type="button"
+          className={styles.mobileCreateButton}
+          onClick={() => openPopup(selectedDate, new Date(selectedDate.getTime() + 60 * 60 * 1000))}
+        >
+          + Tạo lớp
+        </button>
       </div>
 
       <div className={styles.mainArea}>
@@ -1741,7 +1705,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                 ))}
               </div>
 
-              {layoutedEvents.map((e, i) => {
+              {layoutedEvents.map((e) => {
                 const normalizedEvent = normalizeEvent(e);
                 const top = e.startMins;
                 const height = Math.max(e.endMins - e.startMins, 30);
@@ -1752,7 +1716,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                 
                 return (
                   <div
-                    key={i}
+                    key={`${normalizedEvent.id || e.id || "event"}-${e.start?.dateTime || e.start}-${normalizedEvent.calendar_source || ""}`}
                     className={`${styles.eventItem} ${eventClass}`}
                     style={{
                       top: `${top}px`,
@@ -1773,6 +1737,15 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                     }}
                     onContextMenu={(ev) => handleEventRightClick(e, normalizedEvent, ev)}
                     title={`Nhấn chuột phải để xóa: ${normalizedEvent.name}`}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault();
+                        setSelectedEvent(normalizedEvent);
+                        setShowDetailPopup(true);
+                      }
+                    }}
                   >
                     <div className={styles.eventName}>
                       {normalizedEvent.name}
@@ -1883,6 +1856,15 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                               setShowDetailPopup(true);
                             }}
                             onContextMenu={(evv) => handleEventRightClick(ev, ne, evv)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(evv) => {
+                              if (evv.key === "Enter" || evv.key === " ") {
+                                evv.preventDefault();
+                                setSelectedEvent(ne);
+                                setShowDetailPopup(true);
+                              }
+                            }}
                           >
                             <div className={styles.eventName}>{ne.name}</div>
                             <div className={styles.eventTime}>
@@ -2002,23 +1984,22 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         />
       )}
 
-      {showDetailPopup && selectedEvent && (
-        <div className={styles.popupOverlay}>
-          <div className={styles.detailPopup}>
+      {showDetailPopup && selectedEvent && !showEditRecurringModal && !showDeleteModal && !showPopup && (
+        <ModalShell
+          title={`Chi tiết sự kiện ${selectedEvent.name}`}
+          onClose={() => setShowDetailPopup(false)}
+          panelClassName={styles.detailPopup}
+          closeOnBackdrop
+        >
             <div className={styles.detailHeader}>
               <h3>{selectedEvent.name}</h3>
-              <div className={`${styles.calendarBadgeDetail} ${
-                selectedEvent.calendar_source === 'odd' ? styles.badgeOdd : styles.badgeEven
-              }`}>
-                {selectedEvent.calendar_badge} {selectedEvent.calendar_name}
-              </div>
             </div>
 
             {selectedEvent.class_name && (
               <p><b>Tên lớp:</b> {selectedEvent.class_name}</p>
             )}
             <p><b>Giáo viên:</b> {selectedEvent.teacher}</p>
-            <p><b>Chương trình:</b> {selectedEvent.program}</p>
+            <p><b>Chương trình:</b> {getProgramNameFromId(selectedEvent.program)}</p>
 
             <p>
               <b>Thời gian:</b>{" "}
@@ -2132,7 +2113,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
               <button
                 onClick={async () => {
                   if (!selectedEvent.id) {
-                    alert("Không thể chỉnh sửa: thiếu ID sự kiện");
+                    setCalendarNotice("Không thể chỉnh sửa vì sự kiện đang thiếu mã định danh.");
                     return;
                   }
                   // handleEditEvent có bước async (đọc recurrence/master). Phải
@@ -2146,23 +2127,21 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
 
               <button onClick={() => setShowDetailPopup(false)}>Đóng</button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {showPopup && newEvent && (
-        <div className={styles.popupOverlay}>
-          <div className={styles.popupBox} ref={popupRef}>
+        <ModalShell
+          title={editingEvent ? `Chỉnh sửa ${newEvent.title}` : "Thêm sự kiện mới"}
+          description="Nhập thông tin lớp học và lịch lặp"
+          onClose={() => { if (!isSaving) setShowPopup(false); }}
+          panelClassName={styles.popupBox}
+        >
+          <div ref={popupRef}>
             <div className={styles.popupHeader}>
               <h3>🗓️ {editingEvent ? `Chỉnh sửa: ${newEvent.title}` : "Thêm sự kiện mới"}</h3>
-              {newEvent?.target_calendar && (
-                <div className={`${styles.calendarIndicator} ${
-                  newEvent?.hour_type === 'even' ? styles.indicatorEven : styles.indicatorOdd
-                }`}>
-                  ⚡ Sẽ lưu vào: {newEvent.target_calendar}
-                </div>
-              )}
             </div>
+            {formErrors.general && <div role="alert" className={styles.formAlert}>{formErrors.general}</div>}
 
             <label>
               Tiêu đề (tự động):
@@ -2177,41 +2156,55 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
             <label>
               Tên lớp:
               <input
+                id="event-class_name"
                 type="text"
+                aria-invalid={Boolean(formErrors.class_name)}
+                aria-describedby={formErrors.class_name ? "event-class_name-error" : undefined}
                 value={newEvent.class_name || ""}
                 onChange={(e) => {
                   const updated = { ...newEvent, class_name: e.target.value };
                   const programName = getProgramNameFromId(updated.program);
                   updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${programName}`.trim();
                   setNewEvent(updated);
+                  setFormErrors(prev => ({ ...prev, class_name: undefined }));
                 }}
               />
+              {formErrors.class_name && <span id="event-class_name-error" className={styles.fieldError}>{formErrors.class_name}</span>}
             </label>
 
             <label>
               Giáo viên:
               <input
+                id="event-teacher"
                 type="text"
+                aria-invalid={Boolean(formErrors.teacher)}
+                aria-describedby={formErrors.teacher ? "event-teacher-error" : undefined}
                 value={newEvent.teacher}
                 onChange={(e) => {
                   const updated = { ...newEvent, teacher: e.target.value };
                   const programName = getProgramNameFromId(updated.program);
                   updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${programName}`.trim();
                   setNewEvent(updated);
+                  setFormErrors(prev => ({ ...prev, teacher: undefined }));
                 }}
               />
+              {formErrors.teacher && <span id="event-teacher-error" className={styles.fieldError}>{formErrors.teacher}</span>}
             </label>
 
             <label>
               Chương trình:
               <div className={styles.programContainer}>
                 <select
+                  id="event-program"
+                  aria-invalid={Boolean(formErrors.program)}
+                  aria-describedby={formErrors.program ? "event-program-error" : undefined}
                   value={newEvent.program}
                   onChange={(e) => {
                     const updated = { ...newEvent, program: e.target.value };
                     const programName = getProgramNameFromId(updated.program);
                     updated.title = `${updated.class_name || ""} - ${updated.teacher || ""} - ${programName}`.trim();
                     setNewEvent(updated);
+                    setFormErrors(prev => ({ ...prev, program: undefined }));
                   }}
                   className={styles.programSelect}
                 >
@@ -2231,15 +2224,23 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                   ⚙️ Quản lý
                 </button>
               </div>
+              {formErrors.program && <span id="event-program-error" className={styles.fieldError}>{formErrors.program}</span>}
             </label>
 
             <label>
               Link Zoom:
               <input
-                type="text"
+                id="event-zoom_link"
+                type="url"
+                aria-invalid={Boolean(formErrors.zoom_link)}
+                aria-describedby={formErrors.zoom_link ? "event-zoom_link-error" : undefined}
                 value={newEvent.zoom_link}
-                onChange={(e) => setNewEvent({ ...newEvent, zoom_link: e.target.value })}
+                onChange={(e) => {
+                  setNewEvent({ ...newEvent, zoom_link: e.target.value });
+                  setFormErrors(prev => ({ ...prev, zoom_link: undefined }));
+                }}
               />
+              {formErrors.zoom_link && <span id="event-zoom_link-error" className={styles.fieldError}>{formErrors.zoom_link}</span>}
             </label>
 
             <div className={styles.formRow}>
@@ -2269,30 +2270,28 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
               <div className={styles.formGroup}>
                 <label>Bắt đầu:</label>
                 <input
+                  id="event-start"
                   type="datetime-local"
                   value={newEvent.start || ""}
                   onChange={(e) => {
                     handleDateTimeChange('start', e.target.value);
-                    
-                    // ✅ CẬP NHẬT CALENDAR INDICATOR KHI GIỜ THAY ĐỔI
-                    const hourType = checkEvenOddHour(e.target.value);
-                    const targetCalendar = hourType === 'even' ? '📗 Calendar Chẵn' : '📘 Calendar Lẻ';
-                    
-                    setNewEvent(prev => ({
-                      ...prev,
-                      hour_type: hourType,
-                      target_calendar: targetCalendar
-                    }));
                   }}
                 />
               </div>
               <div className={styles.formGroup}>
                 <label>Kết thúc:</label>
                 <input
+                  id="event-end"
                   type="datetime-local"
+                  aria-invalid={Boolean(formErrors.end)}
+                  aria-describedby={formErrors.end ? "event-end-error" : undefined}
                   value={newEvent.end || ""}
-                  onChange={(e) => handleDateTimeChange('end', e.target.value)}
+                  onChange={(e) => {
+                    handleDateTimeChange('end', e.target.value);
+                    setFormErrors(prev => ({ ...prev, end: undefined }));
+                  }}
                 />
+                {formErrors.end && <span id="event-end-error" className={styles.fieldError}>{formErrors.end}</span>}
               </div>
             </div>
 
@@ -2325,7 +2324,10 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
             <label>
               Lặp lại:
               <select
+                id="event-recurrence"
                 value={newEvent.recurrence || ""}
+                aria-invalid={Boolean(formErrors.recurrence)}
+                aria-describedby={formErrors.recurrence ? "event-recurrence-error" : undefined}
                 onChange={(e) => {
                   const val = e.target.value;
                   console.log("🔁 Chọn lặp lại:", val);
@@ -2352,6 +2354,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                   }
                   
                   setNewEvent(updatedEvent);
+                  setFormErrors(prev => ({ ...prev, recurrence: undefined }));
                 }}
               >
                 <option value="">Không lặp</option>
@@ -2360,6 +2363,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                 <option value="MONTHLY">Hàng tháng</option>
                 <option value="YEARLY">Hàng năm</option>
               </select>
+              {formErrors.recurrence && <span id="event-recurrence-error" className={styles.fieldError}>{formErrors.recurrence}</span>}
             </label>
 
             
@@ -2788,8 +2792,20 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
               </button>
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
+
+      <ConfirmationDialog
+        isOpen={Boolean(conflictConfirmation)}
+        title="Phát hiện trùng lịch"
+        message={conflictConfirmation?.message}
+        confirmLabel="Vẫn lưu sự kiện"
+        onCancel={() => setConflictConfirmation(null)}
+        onConfirm={() => {
+          setConflictConfirmation(null);
+          handleSave(true);
+        }}
+      />
 
       {/* ✅ PROGRAM MANAGE MODAL */}
       <ProgramManageModal

@@ -1,6 +1,7 @@
 // frontend/src/components/DeleteConfirmationModal.js
 import { useState } from "react";
 import styles from "./DeleteConfirmationModal.module.css";
+import ModalShell from "./ModalShell";
 
 export default function DeleteConfirmationModal({
   event,
@@ -20,20 +21,18 @@ export default function DeleteConfirmationModal({
 
   const handleConfirm = () => {
     console.log("✅ CONFIRMING DELETE WITH MODE:", deleteMode);
-    console.log("📋 EVENT DATA:", {
-      id: event?.id,
-      name: event?.name,
-      recurrence: event?.recurrence,
-      recurringEventId: event?.recurringEventId
-    });
     onConfirm(deleteMode);
   };
 
   if (!event) return null;
 
   return (
-    <div className={styles.deleteConfirmOverlay}>
-      <div className={styles.deleteConfirmBox}>
+    <ModalShell
+      title="Xóa sự kiện"
+      description="Xác nhận phạm vi sự kiện cần xóa"
+      onClose={onCancel}
+      panelClassName={styles.deleteConfirmBox}
+    >
         <div className={styles.deleteConfirmHeader}>
           🗑️ Xóa sự kiện
         </div>
@@ -121,7 +120,6 @@ export default function DeleteConfirmationModal({
             {deleteMode === 'all' ? 'Xóa tất cả' : 'Xóa'}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

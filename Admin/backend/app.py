@@ -1,5 +1,6 @@
 # main.py
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 from calendar_crud import (
     IdempotencyConflictError,
@@ -19,17 +20,33 @@ from recurrence_helper import build_recurrence_rule
 from ai_agent import get_schedule_suggestion
 from recurrence_helper import build_recurrence_description
 from log_config import make_print
+from auth import (
+    clear_attempts,
+    create_access_token,
+    is_rate_limited,
+    record_failed_attempt,
+    validate_access_token,
+    verify_passcode,
+)
+import os
 
 print = make_print(__name__)
 
-app = FastAPI()
+app = FastAPI(title="ZenCity Smart Calendar API")
 
 # CORS - Allow frontend domain
-ALLOWED_ORIGINS = [
+DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Local development
+    "http://localhost:3001",  # Local frontend
+    "http://localhost:4173",  # Local production preview
+    "http://127.0.0.1:4173",  # Local production preview
     "http://localhost:8000",  # Local development
     "https://zencity-smartcalendar.pages.dev",  # Cloudflare Pages production
-    "*"  # Allow all (for testing, restrict in production)
+]
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", ",".join(DEFAULT_ALLOWED_ORIGINS)).split(",")
+    if origin.strip()
 ]
 
 app.add_middleware(
@@ -39,6 +56,23 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=True,
 )
+
+PUBLIC_PATHS = {"/health", "/auth/login"}
+
+
+@app.middleware("http")
+async def require_admin_session(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not validate_access_token(token):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."},
+        )
+    return await call_next(request)
 
 # ---------------- Pydantic Model ----------------
 class ClassInfo(BaseModel):
@@ -85,6 +119,31 @@ class ConflictCheckRequest(BaseModel):
     start: str
     end: str
     exclude_event_id: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    passcode: str
+
+
+@app.post("/auth/login")
+def login(request: LoginRequest, http_request: Request):
+    forwarded_for = http_request.headers.get("x-forwarded-for", "")
+    client_key = forwarded_for.split(",", 1)[0].strip() or (
+        http_request.client.host if http_request.client else "unknown"
+    )
+    if is_rate_limited(client_key):
+        raise HTTPException(status_code=429, detail="Bạn đã thử quá nhiều lần. Vui lòng thử lại sau 5 phút.")
+    if not verify_passcode(request.passcode):
+        record_failed_attempt(client_key)
+        raise HTTPException(status_code=401, detail="Passcode không chính xác")
+    clear_attempts(client_key)
+    token, expires_at = create_access_token()
+    return {"access_token": token, "token_type": "bearer", "expires_at": expires_at}
+
+
+@app.get("/auth/session")
+def auth_session():
+    return {"authenticated": True}
 
 # ---------------- Routes ----------------
 @app.get("/classes")
@@ -188,7 +247,7 @@ def add_class(
         
         # CHUYỂN TỪ STRING SANG LIST CHO GOOGLE CALENDAR
         data["rrule"] = [recurrence_rule] if recurrence_rule else None
-        print(f"📦 Final data with rrule: {data}")
+        print(f"📦 Recurrence rule prepared: {bool(data.get('rrule'))}")
 
         # Gọi hàm build recurrence description
         recurrence_description = build_recurrence_description(data)

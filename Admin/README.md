@@ -154,6 +154,17 @@ The frontend should be accessible at http://localhost:3000
 Configuration
 Place your Google service account JSON in backend/service_account.json.
 
+Production admin authentication requires these backend environment variables:
+
+```bash
+ADMIN_PASSCODE=your-private-admin-passcode
+ADMIN_AUTH_SECRET=at-least-32-random-characters
+ADMIN_SESSION_TTL_SECONDS=28800
+ALLOWED_ORIGINS=https://your-frontend-domain.example
+```
+
+Generate `ADMIN_AUTH_SECRET` with a cryptographically secure password generator and never commit it to Git. The backend refuses to start on Render or when `ENVIRONMENT=production` if these authentication values are missing.
+
 Configure API credentials in google_calendar.py if necessary.
 
 Update frontend api.js with the backend URL if different from localhost.

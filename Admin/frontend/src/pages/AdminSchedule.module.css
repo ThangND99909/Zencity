@@ -2,6 +2,12 @@
 html, body {
   height: 100%;
   margin: 0;
+  overflow: hidden;
+}
+
+:global(#root) {
+  height: 100%;
+  min-height: 0;
 }
 
 html {
@@ -17,16 +23,17 @@ html {
 body {
   font-family: Arial, sans-serif;
   background-color: #fff;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 /* ===== Container chính ===== */
 .container {
   display: flex;
   flex-direction: column;
-  min-height: 100%;          /* thay cho 100vh để tránh bị che bởi taskbar */
+  height: 100dvh;
+  min-height: 0;
   padding: 20px;
-  padding-bottom: 100px;     /* khoảng trống dưới footer */
+  padding-bottom: 20px;
   width: 100%;        /* tránh tràn ngang khi viewport có scrollbar */
   box-sizing: border-box; /* đảm bảo padding được tính trong width */
   margin: 0;
@@ -35,8 +42,9 @@ body {
 /* ===== Nội dung chính ===== */
 .mainContent {
   flex: 1;                   /* chiếm toàn bộ không gian còn lại */
-  min-height: 500px;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .btn {
@@ -148,7 +156,8 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 600px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tableWrapper {
@@ -156,6 +165,8 @@ body {
   flex-direction: column;
   gap: 30px;
   height: 100%;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* ===== Form box ===== */
@@ -184,10 +195,11 @@ body {
   position: fixed;
   top: 50%;
   left: 50%;
+  right: auto;
   transform: translate(-50%, -50%);
   z-index: 9999;
-  padding: 30px 40px;
-  border-radius: 16px;
+  padding: 16px 52px 16px 16px;
+  border-radius: 12px;
   min-width: 280px;
   max-width: 400px;
   background: white;
@@ -195,9 +207,9 @@ body {
     0 25px 50px -12px rgba(0, 0, 0, 0.08),
     0 0 0 1px rgba(0, 0, 0, 0.02);
   animation: elegantAppear 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  text-align: center;
+  text-align: left;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  width: calc(100% - 32px);
+  width: min(calc(100% - 40px), 400px);
 }
 
 .elegantSuccess {
@@ -210,8 +222,9 @@ body {
 
 /* Icon minimal */
 .elegantIcon {
-  font-size: 56px;
-  margin-bottom: 20px;
+  float: left;
+  margin-right: 12px;
+  font-size: 26px;
   line-height: 1;
   display: inline-block;
   animation: iconPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -238,7 +251,7 @@ body {
   font-size: 14px;
   color: #6b7280;
   line-height: 1.5;
-  margin-bottom: 25px;
+  margin-bottom: 0;
 }
 
 /* Button close elegant */
@@ -269,7 +282,7 @@ body {
 @keyframes elegantAppear {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.96);
+    transform: translate(-50%, calc(-50% - 8px)) scale(0.98);
   }
   40% {
     opacity: 1;
@@ -434,6 +447,21 @@ body {
   transform: translateY(-1px);
 }
 
+.headerActions .btnLogout {
+  min-width: 104px;
+  color: #b42318;
+  background: #ffffff;
+  border: 1px solid #fecaca;
+}
+
+.headerActions .btnLogout:hover {
+  color: #ffffff;
+  background: #b42318;
+  border-color: #b42318;
+  box-shadow: 0 7px 18px rgba(180, 35, 24, 0.2);
+  transform: translateY(-1px);
+}
+
 .buttonIcon {
   display: inline-grid;
   width: 20px;
@@ -459,9 +487,10 @@ body {
 @media (max-width: 768px) {
   .container {
     width: 100%;
-    min-height: 100dvh;
+    height: 100dvh;
+    min-height: 0;
     padding: 12px;
-    padding-bottom: 48px;
+    padding-bottom: 12px;
   }
 
   .mainContent {
@@ -469,7 +498,7 @@ body {
   }
 
   .calendarWrapper {
-    min-height: 640px;
+    min-height: 0;
   }
 
   .tableWrapper {
@@ -499,7 +528,7 @@ body {
 
   .headerActions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .headerActions .btn {
@@ -509,14 +538,18 @@ body {
   }
 
   .elegantNotify {
-    padding: 24px 20px;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    width: calc(100% - 16px);
+    padding: 14px 48px 14px 14px;
   }
 }
 
 @media (max-width: 480px) {
   .container {
     padding: 8px;
-    padding-bottom: 32px;
+    padding-bottom: 8px;
   }
 
   .headerWithLogo {
@@ -554,5 +587,16 @@ body {
     height: auto;
     min-height: 160px;
     padding: 24px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

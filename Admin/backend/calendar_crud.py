@@ -1604,8 +1604,14 @@ def update_following_events(
         print("✅ Old series updated (stopped before instance)")
 
         # 5️⃣ Tạo chuỗi mới bắt đầu từ instance này
-        start_local = datetime.fromisoformat(class_info["start"].replace("Z", "+00:00")).astimezone(tz)
-        end_local = datetime.fromisoformat(class_info["end"].replace("Z", "+00:00")).astimezone(tz)
+        # Frontend datetime-local values intentionally have no UTC offset. Treat
+        # those values as wall-clock time in the selected timezone; calling
+        # astimezone() directly on a naive datetime makes Python assume the
+        # server timezone (UTC on Render) and shifts the event by seven hours.
+        start_normalized = normalize_datetime_with_timezone(class_info["start"], timezone)
+        end_normalized = normalize_datetime_with_timezone(class_info["end"], timezone)
+        start_local = datetime.fromisoformat(start_normalized.replace("Z", "+00:00")).astimezone(tz)
+        end_local = datetime.fromisoformat(end_normalized.replace("Z", "+00:00")).astimezone(tz)
         start_iso = start_local.isoformat()
         end_iso = end_local.isoformat()
 

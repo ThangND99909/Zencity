@@ -342,7 +342,6 @@ export default function ClassTable({ classes, onDelete, calendarFilter }) {
   //    để không nằm trong bundle tải lần đầu.
   const handleExportExcel = async () => {
     if (!filteredClasses || filteredClasses.length === 0) {
-      alert("Không có dữ liệu để export!");
       return;
     }
 
@@ -502,7 +501,12 @@ export default function ClassTable({ classes, onDelete, calendarFilter }) {
             </div>
           </div>
 
-          <div className={styles.scheduleTableWrapper}>
+          <p className={styles.mobileScrollHint}>Vuốt ngang để xem lịch của các ngày còn lại.</p>
+          <div
+            className={styles.scheduleTableWrapper}
+            tabIndex="0"
+            aria-label={`Bảng lịch chương trình ${scheduleSection.program}. Có thể cuộn ngang để xem đầy đủ.`}
+          >
             <table className={styles.scheduleTable}>
               <thead>
                 <tr>
@@ -618,7 +622,7 @@ export default function ClassTable({ classes, onDelete, calendarFilter }) {
             onClick={handleExportExcel}
             disabled={filteredClasses.length === 0}
           >
-            📥 Export Excel ({filteredClasses.length} groups)
+            📥 Xuất Excel ({filteredClasses.length} nhóm)
           </button>
         </div>
       </div>

@@ -35,7 +35,7 @@ const LoadingOverlay = ({ isLoading, type = 'default', message }) => {
   const displayMessage = message || defaultMessage;
 
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} role="status" aria-live="polite" aria-label={displayMessage}>
       <div className={styles.card} style={{ borderTopColor: color }}>
         <div className={styles.icon}>{icon}</div>
         <div className={styles.message}>{displayMessage}</div>
