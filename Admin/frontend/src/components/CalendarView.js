@@ -1241,6 +1241,10 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   };
 
   const performSave = async () => {
+    if (!newEvent) {
+      throw new Error("Không có dữ liệu sự kiện để lưu");
+    }
+
     console.log("🔥 [GOOGLE] SAVE EVENT - Edit mode:", newEvent.editMode);
     console.log("📊 newEvent object:", {
       editMode: newEvent?.editMode,
@@ -1432,13 +1436,13 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       throw new Error("onCreateEvent is not defined");
     }
 
+    setShowPopup(false);
     setEditingEvent(null);
     setNewEvent(null);
-    setShowPopup(false);
   };
 
   const handleSave = async () => {
-    if (savingRef.current) return;
+    if (savingRef.current || !newEvent) return;
 
     savingRef.current = true;
     setIsSaving(true);
@@ -1489,6 +1493,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   }, [showPopup, newEvent, editingEvent]);
 
   const handleDateTimeChange = (field, value) => {
+    if (!newEvent) return;
+
     if (field === 'start') {
       const newStart = value;
       const newEnd = newEvent.end;
@@ -2129,9 +2135,10 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                     alert("Không thể chỉnh sửa: thiếu ID sự kiện");
                     return;
                   }
-                  handleEditEvent(selectedEvent);
-                  setShowDetailPopup(false);
-                  setShowPopup(true);
+                  // handleEditEvent có bước async (đọc recurrence/master). Phải
+                  // chờ dữ liệu form được chuẩn bị xong rồi hàm đó mới mở popup.
+                  // Mở popup sớm khiến render đọc newEvent.title khi newEvent=null.
+                  await handleEditEvent(selectedEvent);
                 }}
               >
                 ✏️ Chỉnh sửa
@@ -2143,7 +2150,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         </div>
       )}
 
-      {showPopup && (
+      {showPopup && newEvent && (
         <div className={styles.popupOverlay}>
           <div className={styles.popupBox} ref={popupRef}>
             <div className={styles.popupHeader}>

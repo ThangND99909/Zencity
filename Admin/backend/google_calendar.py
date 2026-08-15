@@ -4,6 +4,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import google_auth_httplib2
 import httplib2
+import threading
 from log_config import make_print
 
 print = make_print(__name__)
@@ -29,15 +30,29 @@ else:
 # 🔹 Khởi tạo Calendar service
 calendar_service = build('calendar', 'v3', credentials=credentials)
 
+_transport_local = threading.local()
+
 
 def create_calendar_http(timeout=30):
-    """Create an isolated authorized transport for one worker thread."""
-    return google_auth_httplib2.AuthorizedHttp(
-        credentials,
-        http=httplib2.Http(timeout=timeout)
-    )
+    """Return a reusable authorized transport scoped to the current thread.
 
-# ⚡ Warm-up (tùy chọn, để kiểm tra kết nối Google API)
+    ``httplib2.Http`` is not thread-safe, so a single global transport cannot be
+    shared by FastAPI workers. Keeping one transport per thread preserves that
+    isolation while allowing TCP/TLS connections to be reused across the Google
+    calls that make up one CRUD operation.
+    """
+    transport = getattr(_transport_local, "transport", None)
+    transport_timeout = getattr(_transport_local, "timeout", None)
+    if transport is None or transport_timeout != timeout:
+        transport = google_auth_httplib2.AuthorizedHttp(
+            credentials,
+            http=httplib2.Http(timeout=timeout)
+        )
+        _transport_local.transport = transport
+        _transport_local.timeout = timeout
+    return transport
+
+# Giữ nguyên bước kiểm tra kết nối cũ khi backend khởi động.
 try:
     calendar_service.calendarList().list(maxResults=1).execute()
     print("✅ Google Calendar service warmed up successfully!")
