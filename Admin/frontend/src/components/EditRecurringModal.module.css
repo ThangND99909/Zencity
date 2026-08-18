@@ -1,20 +1,5 @@
 /* frontend/src/components/EditRecurringModal.module.css */
 
-.editRecurringOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 3000;
-  padding: 16px;
-  overflow-y: auto;
-}
-
 .editRecurringBox {
   background: white;
   border-radius: 12px;
@@ -118,11 +103,6 @@
 }
 
 @media (max-width: 480px) {
-  .editRecurringOverlay {
-    align-items: flex-start;
-    padding: 8px;
-  }
-
   .editRecurringBox {
     width: 100%;
     padding: 18px 14px;

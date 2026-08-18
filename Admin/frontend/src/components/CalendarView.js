@@ -14,17 +14,43 @@ import ModalShell from "./ModalShell";
 import ConfirmationDialog from "./ConfirmationDialog";
 import moment from "moment-timezone";
 
+const getProgramSuffixFromEventTitle = (eventTitle = "") => {
+  const title = String(eventTitle).trim();
+  const finalDashIndex = Math.max(
+    title.lastIndexOf("-"),
+    title.lastIndexOf("\u2013"),
+    title.lastIndexOf("\u2014")
+  );
+  return finalDashIndex === -1 ? "" : title.slice(finalDashIndex + 1).trim();
+};
+
+const normalizeProgramKey = (value) => String(value || "")
+  .trim()
+  .toLocaleLowerCase("vi")
+  .replace(/[^a-z0-9]/g, "");
 
 
-const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, onDeleteEvent, calendarFilter }, ref) {
+const CalendarView = forwardRef(function CalendarView({
+  events,
+  programEvents,
+  onCreateEvent,
+  onDeleteEvent,
+  calendarFilter,
+  writeDisabled = false,
+  writeDisabledReason = "",
+  onCalendarUnavailable,
+  onVisibleRangeChange,
+}, ref) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState(() => window.innerWidth <= 768 ? "day" : "week");
   const [showPopup, setShowPopup] = useState(false);
   const [formErrors, setFormErrors] = useState({});
   const [conflictConfirmation, setConflictConfirmation] = useState(null);
   const [calendarNotice, setCalendarNotice] = useState("");
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showDetailPopup, setShowDetailPopup] = useState(false);
+  const [monthOverflow, setMonthOverflow] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
   const [newEvent, setNewEvent] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -68,19 +94,16 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     { value: "America/Chicago", label: "🇺🇸 Giờ miền Trung - Chicago (UTC-6/-5)" },
   ]);
 
-  const [programOptions, setProgramOptions] = useState([
-    { value: "", label: "-- Chọn chương trình --" }
-  ]);
+  const [managedProgramOptions, setManagedProgramOptions] = useState([]);
 
   // ✅ ĐỊNH NGHĨA LOADPROGRAMS FUNCTION
   const loadPrograms = async () => {
     try {
       const data = await getPrograms();
-      const options = [
-        { value: "", label: "-- Chọn chương trình --" },
-        ...data.map(p => ({ value: p.id, label: p.name }))
-      ];
-      setProgramOptions(options);
+      setManagedProgramOptions(data
+        .filter((program) => program?.id && program?.name?.trim())
+        .map((program) => ({ value: program.id, label: program.name.trim() }))
+      );
     } catch (error) {
       console.error("❌ Failed to load programs:", error);
       // Keep default option on error
@@ -88,10 +111,28 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   };
 
   // ✅ HELPER: GET PROGRAM NAME FROM ID
-  const normalizeProgramKey = (value) => String(value || "")
-    .trim()
-    .toLocaleLowerCase("vi")
-    .replace(/[^a-z0-9]/g, "");
+  const programOptions = useMemo(() => {
+    const optionsByName = new Map();
+
+    managedProgramOptions.forEach((option) => {
+      optionsByName.set(normalizeProgramKey(option.label), option);
+    });
+
+    // Keep programs from both the broad catalog window and the currently
+    // visible window (which may be outside that catalog range).
+    const catalogEvents = [...(programEvents || []), ...events];
+    catalogEvents.forEach((event) => {
+      const programName = getProgramSuffixFromEventTitle(event.summary || event.name || "");
+      const key = normalizeProgramKey(programName);
+      if (key && !optionsByName.has(key)) {
+        optionsByName.set(key, { value: programName, label: programName });
+      }
+    });
+
+    return Array.from(optionsByName.values()).sort((a, b) =>
+      a.label.localeCompare(b.label, "vi", { sensitivity: "base" })
+    );
+  }, [events, managedProgramOptions, programEvents]);
 
   const getProgramOption = (programValue) => {
     const key = normalizeProgramKey(programValue);
@@ -235,6 +276,11 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
 
   // ✅ HÀM XỬ LÝ DELETE TỪ CONTEXT MENU
   const handleDeleteFromContextMenu = (event) => {
+    if (writeDisabled) {
+      setCalendarNotice(writeDisabledReason || "Google Calendar chưa sẵn sàng. Không thể xóa sự kiện.");
+      handleCloseContextMenu();
+      return;
+    }
     console.log("🖱️ DELETE FROM CONTEXT MENU:", {
       eventId: event.id,
       eventName: event.name,
@@ -255,6 +301,11 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   // Và sửa handleConfirmDelete:
 
   const handleConfirmDelete = async (deleteMode = 'this') => {
+    if (writeDisabled) {
+      setCalendarNotice(writeDisabledReason || "Google Calendar chưa sẵn sàng. Không thể xóa sự kiện.");
+      setShowDeleteModal(false);
+      return;
+    }
     if (!eventToDelete || !eventToDelete.id) {
       setCalendarNotice("Không thể xóa vì sự kiện đang thiếu mã định danh.");
       setShowDeleteModal(false);
@@ -286,6 +337,11 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   };
 
   const handleEditEvent = async (event) => {
+    if (writeDisabled) {
+      setCalendarNotice(writeDisabledReason || "Google Calendar chưa sẵn sàng. Không thể chỉnh sửa sự kiện.");
+      setShowDetailPopup(false);
+      return;
+    }
     if (!event.id) {
       setCalendarNotice("Không thể chỉnh sửa vì sự kiện đang thiếu mã định danh.");
       return;
@@ -434,9 +490,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         end: localEnd,
         timezone: userTimezone,
         recurrence_description: event.recurrence_description || "",
-        calendar_source: event.calendar_source,
-        is_recurring: event.recurrence || event.recurringEventId,
-        recurring_event_id: event.recurringEventId,
         // ✅ THÊM TẤT CẢ CÁC COUNT
         week_count: weekCount,
         month_count: monthCount,
@@ -449,8 +502,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         // ✅ THÊM THÔNG TIN QUAN TRỌNG CHO BACKEND
         _is_instance: event._is_instance || !!event.recurringEventId,
         _instance_index: instanceIndex,
-        _remaining_count: adjustedRepeatCount,
-        _estimated_instance_position: instanceIndex // Cho backend biết đây là instance thứ mấy
+        _remaining_count: adjustedRepeatCount
       };
       
       
@@ -522,8 +574,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       editMode: editMode,
       repeat_count: finalRepeatCount,
       timezone: userTimezone,
-      _editModeConfirmed: true,
-      is_recurring_instance: !!originalEvent?.recurringEventId,
       master_event_id: originalEvent?.recurringEventId || originalEvent?.id,
 
       // METADATA QUAN TRỌNG CHO BACKEND
@@ -830,6 +880,42 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     return days;
   };
 
+  useEffect(() => {
+    if (!onVisibleRangeChange) return;
+
+    let rangeStart;
+    let rangeEnd;
+
+    if (viewMode === "month") {
+      const year = selectedDate.getFullYear();
+      const month = selectedDate.getMonth();
+      const firstOfMonth = new Date(year, month, 1);
+      const firstDayIndex = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
+      rangeStart = new Date(year, month, 1 - firstDayIndex);
+
+      const lastOfMonth = new Date(year, month + 1, 0);
+      const lastDayIndex = (lastOfMonth.getDay() + 6) % 7;
+      rangeEnd = new Date(year, month + 1, 7 - lastDayIndex);
+    } else if (viewMode === "week") {
+      const dayIndex = (selectedDate.getDay() + 6) % 7;
+      rangeStart = new Date(selectedDate);
+      rangeStart.setDate(selectedDate.getDate() - dayIndex);
+      rangeEnd = new Date(rangeStart);
+      rangeEnd.setDate(rangeStart.getDate() + 7);
+    } else {
+      rangeStart = new Date(selectedDate);
+      rangeEnd = new Date(selectedDate);
+      rangeEnd.setDate(rangeEnd.getDate() + 1);
+    }
+
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd.setHours(0, 0, 0, 0);
+    onVisibleRangeChange({
+      timeMin: rangeStart.toISOString(),
+      timeMax: rangeEnd.toISOString(),
+    });
+  }, [onVisibleRangeChange, selectedDate, viewMode]);
+
   const layoutEventsForDay = (evts, day) => {
     const dayStart = new Date(day);
     dayStart.setHours(0, 0, 0, 0);
@@ -944,6 +1030,45 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     };
   };
 
+  const getEventBoundary = (boundary) => {
+    const value = boundary?.dateTime || boundary?.date || boundary;
+    const parsed = value ? new Date(value) : null;
+    return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+  };
+
+  const getMonthEventsForDay = (day) => {
+    const dayStart = new Date(day);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    return filteredEvents
+      .filter((event) => {
+        const start = getEventBoundary(event.start);
+        const end = getEventBoundary(event.end) || start;
+        return start && end && end > dayStart && start < dayEnd;
+      })
+      .sort((first, second) => {
+        const firstStart = getEventBoundary(first.start);
+        const secondStart = getEventBoundary(second.start);
+        return (firstStart?.getTime() || 0) - (secondStart?.getTime() || 0);
+      });
+  };
+
+  const formatMonthEventTime = (event) => {
+    if (event.start?.date && !event.start?.dateTime) return "";
+    const start = getEventBoundary(event.start);
+    if (!start) return "";
+    const eventMoment = moment(start)
+      .tz(event.timezone || event.start?.timeZone || "Asia/Ho_Chi_Minh");
+    return eventMoment.format(eventMoment.minutes() === 0 ? "hA" : "h:mmA");
+  };
+
+  const isPastMonthEvent = (event) => {
+    const end = getEventBoundary(event.end) || getEventBoundary(event.start);
+    return Boolean(end && end < today);
+  };
+
   const parseRecurrenceRule = (ruleString) => {
     if (!ruleString) {
       return { recurrenceType: "", repeatCount: 1, byday: [], bymonthday: [], bymonth: [] };
@@ -1047,7 +1172,6 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
 
 
   const [masterEventsCache, setMasterEventsCache] = useState({});
-  const [viewMode, setViewMode] = useState(() => window.innerWidth <= 768 ? "day" : "week");
 
   const parseRecurrenceFromEvent = async (cls) => {
     console.log("🔍 [RECURRENCE DEBUG] Checking event:", {
@@ -1179,31 +1303,46 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       }
   };
 
+  const MAX_LISTED_CONFLICTS = 10;
+
   const createConflictMessage = (conflictResult, currentTeacher) => {
-      let message = `⚠️ KIỂM TRA XUNG ĐỘT LỊCH\n\n`;
-      
-      if (conflictResult.has_conflict && conflictResult.conflicts.length > 0) {
-          message += `Giáo viên "${currentTeacher}" có ${conflictResult.conflicts.length} xung đột:\n\n`;
-          
-          conflictResult.conflicts.forEach((conflict, index) => {
-              const startTime = new Date(conflict.event_start).toLocaleString('vi-VN');
-              const endTime = new Date(conflict.event_end).toLocaleString('vi-VN');
-              
-              message += `${index + 1}. ${conflict.event_summary}\n`;
-              message += `   👨‍🏫 ${conflict.event_teacher}\n`;
-              message += `   🕒 ${startTime} - ${endTime}\n\n`;
-          });
-          
-          message += `Nếu tiếp tục, sự kiện vẫn sẽ được lưu dù đang trùng lịch.`;
-      } else {
-          message += `✅ Không có xung đột với giáo viên "${currentTeacher}"\n\n`;
-          message += `Bạn có thể tiếp tục lưu sự kiện.`;
+    const conflicts = conflictResult.conflicts || [];
+    const totalConflicts = conflictResult.conflict_count ?? conflicts.length;
+    const checkedOccurrences = conflictResult.checked_occurrences || 1;
+    const formatTime = (value) => (value ? new Date(value).toLocaleString("vi-VN") : "?");
+
+    let message = `⚠️ PHÁT HIỆN TRÙNG LỊCH\n\n`;
+    if (checkedOccurrences > 1) {
+      message += `Đã kiểm tra ${checkedOccurrences} buổi của chuỗi lặp.\n`;
+    }
+    message += `Giáo viên "${currentTeacher}" bị trùng ${totalConflicts} lượt:\n\n`;
+
+    conflicts.slice(0, MAX_LISTED_CONFLICTS).forEach((conflict, index) => {
+      message += `${index + 1}. ${conflict.event_summary}\n`;
+      if (conflict.occurrence_start) {
+        message += `   📌 Buổi bị trùng: ${formatTime(conflict.occurrence_start)}\n`;
       }
-      
-      return message;
+      message += `   👨‍🏫 ${conflict.event_teacher}\n`;
+      message += `   🕒 ${formatTime(conflict.event_start)} - ${formatTime(conflict.event_end)}\n\n`;
+    });
+
+    const listed = Math.min(conflicts.length, MAX_LISTED_CONFLICTS);
+    if (totalConflicts > listed) {
+      message += `… và ${totalConflicts - listed} lượt trùng khác.\n\n`;
+    }
+    if (conflictResult.occurrences_truncated) {
+      message += `⚠️ Chuỗi quá dài — chỉ kiểm tra được ${checkedOccurrences} buổi đầu tiên.\n\n`;
+    }
+
+    message += `Nếu tiếp tục, sự kiện vẫn sẽ được lưu dù đang trùng lịch.`;
+    return message;
   };
 
   const openPopup = (start, end) => {
+    if (writeDisabled) {
+      setCalendarNotice(writeDisabledReason || "Google Calendar chưa sẵn sàng. Không thể tạo sự kiện.");
+      return;
+    }
     const defaultEnd = end > start ? end : new Date(start.getTime() + 60 * 60 * 1000);
     
     const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1252,6 +1391,9 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   };
 
   const performSave = async ({ skipConflictCheck = false } = {}) => {
+    if (writeDisabled) {
+      throw new Error(writeDisabledReason || "Google Calendar chưa sẵn sàng. Sự kiện chưa được lưu.");
+    }
     if (!newEvent) {
       throw new Error("Không có dữ liệu sự kiện để lưu");
     }
@@ -1312,33 +1454,26 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
     }
 
     setFormErrors({});
-    
-    // 🔹 Chỉ gửi ISO chuẩn UTC (cực kỳ quan trọng)
-    // 🔍 KIỂM TRA XUNG ĐỘT TRƯỚC KHI LƯU
-    if (!skipConflictCheck && newEvent.teacher && newEvent.teacher.trim() !== "") {
-      try {
-        console.log("🛡️ Checking for schedule conflicts...");
-        
-        const conflictResult = await checkScheduleConflict(
-          newEvent.teacher,
-          formatForBackend(newEvent.start, newEvent.timezone),
-          formatForBackend(newEvent.end, newEvent.timezone),
-          newEvent.id
-        );
-
-        // XỬ LÝ KẾT QUẢ AI
-        if (conflictResult.has_conflict) {
-          const conflictMessage = createConflictMessage(conflictResult, newEvent.teacher);
-          setConflictConfirmation({ message: conflictMessage });
-          return;
-        }
-      } catch (error) {
-        setFormErrors({ general: `Không thể kiểm tra xung đột: ${error.response?.data?.detail || error.message}` });
-        console.error("❌ Error during conflict check:", error.response?.data || error);
-      }
-    }
 
     const finalTimezone = newEvent?.timezone || "Asia/Ho_Chi_Minh";
+
+    // Sửa 1 buổi lẻ của chuỗi ('this' trên instance) thì buổi đó tách khỏi chuỗi và
+    // trở thành sự kiện đơn — không còn luật lặp nào để giữ.
+    const keepsRecurrence = newEvent.editMode !== "this" || !newEvent.id?.includes("_");
+
+    // ⚠️ Tính MỘT LẦN rồi dùng chung cho cả bước kiểm tra trùng lịch lẫn payload lưu.
+    //    Nếu hai bên tự dựng riêng, chúng có thể lệch nhau và ta sẽ kiểm tra một chuỗi
+    //    khác với chuỗi thực sự được tạo.
+    const recurrencePayload = keepsRecurrence
+      ? {
+          recurrence: newEvent.recurrence || "",
+          repeat_count: newEvent.repeat_count || 1,
+          byday: newEvent.byday || [],
+          bymonthday: newEvent.bymonthday || [],
+          bymonth: newEvent.bymonth || [],
+        }
+      : {};
+
     // 🕐 Xác định xem người dùng có đổi timezone thực sự không
     const timezoneChanged =
       editingEvent && newEvent.timezone && editingEvent.timezone !== newEvent.timezone;
@@ -1355,6 +1490,53 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       timezoneChanged
     );
 
+    // 🔍 KIỂM TRA TRÙNG LỊCH TRƯỚC KHI LƯU
+    // ⚠️ FAIL-CLOSED: nếu KHÔNG kiểm tra được thì DỪNG, tuyệt đối không lưu tiếp.
+    //    Trước đây lỗi kiểm tra chỉ được ghi vào formErrors rồi hàm chạy tiếp xuống
+    //    onCreateEvent → sự kiện trùng vẫn được tạo mà người dùng không hay biết.
+    //    Teacher đã được validate bắt buộc ở trên nên luôn có giá trị tại đây.
+    if (!skipConflictCheck) {
+      let conflictResult;
+      try {
+        console.log("🛡️ Checking for schedule conflicts...");
+
+        conflictResult = await checkScheduleConflict({
+          teacher: newEvent.teacher,
+          start: startForBackend,
+          end: endForBackend,
+          timezone: finalTimezone,
+          excludeEventId: newEvent.id,
+          // Chuỗi cũ sẽ bị thay thế toàn bộ nên không tính là trùng với chính nó.
+          excludeMasterEventId: (keepsRecurrence && newEvent.master_event_id) || null,
+          // Không còn luật lặp ⇒ chỉ kiểm tra đúng 1 buổi. Truyền tường minh thay vì
+          // dựa vào giá trị mặc định của lớp API.
+          recurrence: recurrencePayload.recurrence || "",
+          repeatCount: recurrencePayload.repeat_count || 1,
+          byday: recurrencePayload.byday || [],
+          bymonthday: recurrencePayload.bymonthday || [],
+          bymonth: recurrencePayload.bymonth || [],
+        });
+      } catch (error) {
+        console.error("❌ Error during conflict check:", error.response?.data || error);
+        const safeMessage = error.message || "Hệ thống chưa thể kiểm tra lịch hiện có.";
+        const safeAction = error.userAction || "Sự kiện CHƯA được lưu. Vui lòng thử lại.";
+        if (error.appCode?.startsWith("CALENDAR_")) {
+          onCalendarUnavailable?.(`${safeMessage} ${safeAction}`);
+        }
+        setFormErrors({
+          general: `${error.userTitle || "Không kiểm tra được trùng lịch"}. ${safeMessage} ${safeAction}`
+        });
+        return;
+      }
+
+      if (conflictResult.has_conflict) {
+        setConflictConfirmation({
+          message: createConflictMessage(conflictResult, newEvent.teacher)
+        });
+        return;
+      }
+    }
+
     // ✅ Gói dữ liệu gửi backend
     const eventData = {
       ...(newEvent.id && { id: newEvent.id }),
@@ -1365,15 +1547,7 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
       zoom_link: newEvent.zoom_link,
       meeting_id: newEvent.meeting_id,
       passcode: newEvent.passcode,
-      ...(newEvent.editMode !== "this" || !newEvent.id?.includes("_")
-        ? {
-            recurrence: newEvent.recurrence || "",
-            repeat_count: newEvent.repeat_count || 1,
-            byday: newEvent.byday || [],
-            bymonthday: newEvent.bymonthday || [],
-            bymonth: newEvent.bymonth || [],
-          }
-        : {}),
+      ...recurrencePayload,
       start: startForBackend,
       end: endForBackend,
       timezone: finalTimezone,
@@ -1417,9 +1591,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
   useEffect(() => {
     const handleClickOutside = (e) => {
       // ✅ CHECK IF CLICK IS FROM WITHIN A MODAL
-      const isClickFromModal = e.target.closest('[data-modal="true"]') || 
-                               e.target.closest('.modalOverlay');
-      
+      const isClickFromModal = e.target.closest('[data-modal="true"]');
+
       if (isClickFromModal) return; // Don't close popup if clicking on modal
       
       if (popupRef.current && !popupRef.current.contains(e.target)) setShowPopup(false);
@@ -1574,6 +1747,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         <button
           type="button"
           className={styles.mobileCreateButton}
+          disabled={writeDisabled}
+          title={writeDisabled ? writeDisabledReason : "Tạo lớp"}
           onClick={() => openPopup(selectedDate, new Date(selectedDate.getTime() + 60 * 60 * 1000))}
         >
           + Tạo lớp
@@ -1584,6 +1759,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
         <div className={styles.sidebar}>
           <button
             className={styles.createButton}
+            disabled={writeDisabled}
+            title={writeDisabled ? writeDisabledReason : "Tạo sự kiện"}
             onClick={() =>
               openPopup(selectedDate, new Date(selectedDate.getTime() + 60 * 60 * 1000))
             }
@@ -1896,13 +2073,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
               <div className={styles.monthGrid}>
                 {getMonthDays(selectedDate).map((d, i) => {
                   const isToday = d.date.toDateString() === today.toDateString();
-                  const dayEvts = filteredEvents.filter((e) => {
-                    const s = new Date(e.start?.dateTime || e.start);
-                    const ds = new Date(d.date); ds.setHours(0, 0, 0, 0);
-                    const de = new Date(d.date); de.setHours(23, 59, 59, 999);
-                    return s >= ds && s <= de;
-                  });
-                  const maxVisible = 3;
+                  const dayEvts = getMonthEventsForDay(d.date);
+                  const maxVisible = 2;
                   const visibleEvts = dayEvts.slice(0, maxVisible);
                   const hiddenCount = dayEvts.length - maxVisible;
                   return (
@@ -1916,24 +2088,40 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
                       </div>
                       {visibleEvts.map((ev, j) => {
                         const ne = normalizeEvent(ev);
+                        const eventTime = formatMonthEventTime(ne);
+                        const isPast = isPastMonthEvent(ne);
                         return (
-                          <div
-                            key={j}
-                            className={`${styles.monthEventChip} ${ne.calendar_source === "odd" ? styles.chipOdd : styles.chipEven}`}
+                          <button
+                            type="button"
+                            key={ne.id || `${eventTime}-${ne.name}-${j}`}
+                            className={`${styles.monthEventChip} ${isPast ? styles.monthEventPast : ""}`}
                             onClick={(e) => { e.stopPropagation(); setSelectedEvent(ne); setShowDetailPopup(true); }}
                             title={ne.name}
                           >
-                            {ne.name}
-                          </div>
+                            <span
+                              className={styles.monthEventDot}
+                              style={{ backgroundColor: ne.calendar_color }}
+                              aria-hidden="true"
+                            />
+                            {eventTime && <span className={styles.monthEventTime}>{eventTime}</span>}
+                            <span className={styles.monthEventTitle}>{ne.name}</span>
+                          </button>
                         );
                       })}
                       {hiddenCount > 0 && (
-                        <div
+                        <button
+                          type="button"
                           className={styles.monthMoreEvents}
-                          onClick={(e) => { e.stopPropagation(); setSelectedDate(d.date); setViewMode("day"); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMonthOverflow({
+                              date: d.date,
+                              events: dayEvts.map(normalizeEvent),
+                            });
+                          }}
                         >
-                          +{hiddenCount} thêm
-                        </div>
+                          {hiddenCount} mục khác
+                        </button>
                       )}
                     </div>
                   );
@@ -1943,6 +2131,60 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
           )}
         </div>
       </div>
+
+      {monthOverflow && (
+        <div
+          className={styles.monthOverflowBackdrop}
+          onClick={() => setMonthOverflow(null)}
+        >
+          <div
+            className={styles.monthOverflowPopover}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Sự kiện ngày ${monthOverflow.date.toLocaleDateString("vi-VN")}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={styles.monthOverflowHeader}>
+              <div>
+                <span>{monthOverflow.date.toLocaleDateString("vi-VN", { weekday: "long" })}</span>
+                <strong>{monthOverflow.date.getDate()}</strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMonthOverflow(null)}
+                aria-label="Đóng danh sách sự kiện"
+              >
+                ×
+              </button>
+            </div>
+            <div className={styles.monthOverflowList}>
+              {monthOverflow.events.map((event, index) => {
+                const eventTime = formatMonthEventTime(event);
+                return (
+                  <button
+                    type="button"
+                    key={event.id || `${eventTime}-${event.name}-${index}`}
+                    className={styles.monthOverflowEvent}
+                    onClick={() => {
+                      setMonthOverflow(null);
+                      setSelectedEvent(event);
+                      setShowDetailPopup(true);
+                    }}
+                  >
+                    <span
+                      className={styles.monthEventDot}
+                      style={{ backgroundColor: event.calendar_color }}
+                      aria-hidden="true"
+                    />
+                    {eventTime && <span className={styles.monthEventTime}>{eventTime}</span>}
+                    <span className={styles.monthEventTitle}>{event.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Context Menu */}
       {contextMenu.visible && contextMenu.event && (
@@ -2111,6 +2353,8 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
 
             <div className={styles.detailActions}>
               <button
+                disabled={writeDisabled}
+                title={writeDisabled ? writeDisabledReason : "Chỉnh sửa sự kiện"}
                 onClick={async () => {
                   if (!selectedEvent.id) {
                     setCalendarNotice("Không thể chỉnh sửa vì sự kiện đang thiếu mã định danh.");
@@ -2140,6 +2384,16 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
           <div ref={popupRef}>
             <div className={styles.popupHeader}>
               <h3>🗓️ {editingEvent ? `Chỉnh sửa: ${newEvent.title}` : "Thêm sự kiện mới"}</h3>
+              <button
+                type="button"
+                className={styles.popupClose}
+                onClick={() => setShowPopup(false)}
+                disabled={isSaving}
+                aria-label="Đóng"
+                title="Đóng"
+              >
+                ✕
+              </button>
             </div>
             {formErrors.general && <div role="alert" className={styles.formAlert}>{formErrors.general}</div>}
 
@@ -2783,7 +3037,10 @@ const CalendarView = forwardRef(function CalendarView({ events, onCreateEvent, o
             )}
 
             <div className={styles.popupActions}>
-              <button onClick={handleSave} className={styles.btnSave} disabled={isSaving}>
+              {/* ⚠️ Phải bọc trong arrow function: onClick={handleSave} khiến React
+                  truyền SyntheticEvent vào tham số skipConflictCheck (luôn truthy)
+                  → bước kiểm tra trùng lịch bị bỏ qua hoàn toàn. */}
+              <button onClick={() => handleSave()} className={styles.btnSave} disabled={isSaving}>
                 {isSaving ? "⏳ Đang lưu..." : editingEvent ? "💾 Cập nhật" : "➕ Tạo mới"}
               </button>
               

@@ -1,11 +1,75 @@
 // frontend/src/components/ClassTable.js
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import styles from "./ClassTable.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
 import { getPrograms } from "../services/api";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
 const ALL_PROGRAMS = "__all_programs__";
+
+const normalizeProgramText = (value = "") => String(value)
+  .normalize("NFKC")
+  .toLocaleLowerCase("vi")
+  .replace(/\s+/g, " ")
+  .trim();
+
+const isWordCharacter = (character) => character && /[\p{L}\p{N}]/u.test(character);
+
+// Event titles imported from Google Calendar do not always contain a program
+// field. Resolve it from a complete keyword in the title, preferring the match
+// nearest the end (the conventional title format ends with "- Program").
+export const findProgramNameInEventTitle = (eventTitle, programNames = []) => {
+  const title = String(eventTitle);
+  const normalizedTitle = normalizeProgramText(title);
+  if (!normalizedTitle) return "";
+
+  // The program is always the text after the final dash. Do not require
+  // surrounding spaces because imported titles can contain "...)- Beginner".
+  const finalDashIndex = Math.max(
+    title.lastIndexOf("-"),
+    title.lastIndexOf("–"),
+    title.lastIndexOf("—")
+  );
+  if (finalDashIndex !== -1) {
+    const suffix = title.slice(finalDashIndex + 1).trim();
+    if (suffix) {
+      const configuredName = programNames.find(
+        (name) => normalizeProgramText(name) === normalizeProgramText(suffix)
+      );
+      return configuredName || suffix;
+    }
+  }
+
+  const configuredMatch = programNames
+    .map((name) => ({ name, keyword: normalizeProgramText(name) }))
+    .filter(({ keyword }) => keyword)
+    .flatMap(({ name, keyword }) => {
+      const matches = [];
+      let startIndex = 0;
+
+      while (startIndex <= normalizedTitle.length - keyword.length) {
+        const index = normalizedTitle.indexOf(keyword, startIndex);
+        if (index === -1) break;
+
+        const before = normalizedTitle[index - 1];
+        const after = normalizedTitle[index + keyword.length];
+        if (!isWordCharacter(before) && !isWordCharacter(after)) {
+          matches.push({
+            name,
+            index,
+            endIndex: index + keyword.length,
+            length: keyword.length
+          });
+        }
+        startIndex = index + keyword.length;
+      }
+
+      return matches;
+    })
+    .sort((a, b) => b.endIndex - a.endIndex || b.length - a.length || b.index - a.index)[0];
+
+  return configuredMatch?.name || "";
+};
 
 const getProgramHeaderStyle = (programName = "") => {
   const hash = Array.from(programName).reduce(
@@ -63,6 +127,11 @@ export default function ClassTable({ classes, onDelete, calendarFilter }) {
       .map((line) => line.trim())
       .find((line) => /^Room\b/i.test(line));
 
+    const programFromTitle = findProgramNameInEventTitle(
+      cls.summary || cls.name || "",
+      Object.values(programsMap)
+    );
+
     const calendarSource = cls._calendar_source || 
                           (cls.calendar_id ? (cls.calendar_id.includes('even') ? 'even' : 'odd') : 'odd');
     
@@ -84,14 +153,17 @@ export default function ClassTable({ classes, onDelete, calendarFilter }) {
       meeting_id: cls.meeting_id || meetingId || "",
       passcode: cls.passcode || passcode || "",
       zoom_room: cls.zoom_room || cls.room || roomLine || cls.summary || "",
-      program: getProgramName(cls.program || program || ""),
+      // The event title is the source of truth when it contains a known
+      // program keyword. Fall back to the explicit field/description for old
+      // events whose title does not mention a program.
+      program: programFromTitle || getProgramName(cls.program || program || ""),
       calendar_source: calendarInfo.source,
       calendar_name: calendarInfo.name,
       recurrence: cls.recurrence,
       recurringEventId: cls.recurringEventId,
       recurrence_description: cls.recurrence_description || ""
     };
-  }, [getProgramName]);
+  }, [getProgramName, programsMap]);
 
   // ⚡ Memo hóa kết quả extractClassInfo theo cls.id để không parse regex lặp lại
   //    nhiều lần cho cùng một lớp trong mỗi render.
@@ -175,11 +247,8 @@ export default function ClassTable({ classes, onDelete, calendarFilter }) {
       const representative = { ...events[0] };
       // Thêm metadata để biết đây là đại diện của nhóm
       representative._isRecurringGroup = true;
-      representative._recurringEvents = events;
       representative._recurringCount = events.length;
-      representative._nextOccurrence = events[0];
-      representative._lastOccurrence = events[events.length - 1];
-      
+
       return representative;
     });
     

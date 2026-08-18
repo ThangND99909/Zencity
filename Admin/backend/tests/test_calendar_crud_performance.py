@@ -53,12 +53,7 @@ class CalendarLookupTests(unittest.TestCase):
         request.execute.return_value = {"id": "event-1"}
         self.service.events.return_value.get.return_value = request
 
-        with patch.object(self.crud, "_saved_calendar_hint", return_value="calendar-even"), \
-             patch.object(
-                 self.crud,
-                 "_resolve_calendar_order",
-                 return_value=["calendar-even", "calendar-odd"],
-             ):
+        with patch.object(self.crud, "_saved_calendar_hint", return_value="calendar-even"):
             order, results = self.crud._probe_event_on_calendars("event-1")
 
         self.assertEqual(order, ["calendar-even", "calendar-odd"])
@@ -74,12 +69,7 @@ class CalendarLookupTests(unittest.TestCase):
         request.execute.side_effect = [not_found, {"id": "event-1"}]
         self.service.events.return_value.get.return_value = request
 
-        with patch.object(self.crud, "_saved_calendar_hint", return_value="calendar-even"), \
-             patch.object(
-                 self.crud,
-                 "_resolve_calendar_order",
-                 return_value=["calendar-even", "calendar-odd"],
-             ):
+        with patch.object(self.crud, "_saved_calendar_hint", return_value="calendar-even"):
             _, results = self.crud._probe_event_on_calendars("event-1")
 
         self.assertIsInstance(results["calendar-even"], HttpError)

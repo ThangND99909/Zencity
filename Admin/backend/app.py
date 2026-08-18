@@ -1,7 +1,7 @@
 # main.py
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from calendar_crud import (
     IdempotencyConflictError,
     list_events,
@@ -12,19 +12,25 @@ from calendar_crud import (
     invalidate_cache,
 )
 from program_crud import get_all_programs, create_program, update_program, delete_program
+from check_conflict import (
+    find_conflicts,
+    group_occurrences_into_windows,
+    window_bounds,
+)
 from googleapiclient.errors import HttpError
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from typing import Optional, List
 from recurrence_helper import build_recurrence_rule
 from ai_agent import get_schedule_suggestion
-from recurrence_helper import build_recurrence_description
+from recurrence_helper import build_recurrence_description, expand_occurrences
 from log_config import make_print
 from auth import (
     clear_attempts,
     create_access_token,
     is_rate_limited,
     record_failed_attempt,
+    resolve_client_key,
     validate_access_token,
     verify_passcode,
 )
@@ -58,6 +64,37 @@ app.add_middleware(
 )
 
 PUBLIC_PATHS = {"/health", "/auth/login"}
+
+# Trần số xung đột trả về cho client. conflict_count vẫn phản ánh tổng thật.
+MAX_REPORTED_CONFLICTS = 50
+
+
+def calendar_http_error_detail(error):
+    """Translate Google Calendar failures into safe, actionable API errors."""
+    upstream_status = getattr(error.resp, "status", None)
+    if upstream_status in (403, 404):
+        return {
+            "code": "CALENDAR_NOT_ACCESSIBLE",
+            "title": "Không thể kết nối lịch học",
+            "message": "Google Calendar chưa cấp quyền truy cập cho hệ thống.",
+            "action": (
+                "Vui lòng kiểm tra Calendar ID, chia sẻ cả hai lịch cho "
+                "tài khoản dịch vụ, sau đó bấm Làm mới."
+            ),
+        }
+    if upstream_status == 429:
+        return {
+            "code": "CALENDAR_RATE_LIMITED",
+            "title": "Google Calendar đang bận",
+            "message": "Hệ thống đã tạm thời vượt giới hạn truy cập lịch.",
+            "action": "Vui lòng đợi ít phút rồi bấm Làm mới.",
+        }
+    return {
+        "code": "CALENDAR_SERVICE_UNAVAILABLE",
+        "title": "Chưa thể tải lịch học",
+        "message": "Kết nối với Google Calendar đang tạm thời gián đoạn.",
+        "action": "Vui lòng thử lại sau.",
+    }
 
 
 @app.middleware("http")
@@ -119,6 +156,19 @@ class ConflictCheckRequest(BaseModel):
     start: str
     end: str
     exclude_event_id: Optional[str] = None
+    # Chỉ truyền khi thao tác lưu thay thế CẢ chuỗi lặp (edit mode 'following'/'all'),
+    # để các buổi khác của chính chuỗi đó không bị báo là trùng với nhau.
+    exclude_master_event_id: Optional[str] = None
+    # Luật lặp — nếu có, TẤT CẢ các buổi trong chuỗi đều được kiểm tra.
+    # `str` chứ không phải `Optional[str]`: gửi null là lỗi client (422) chứ không được
+    # rơi vào nhánh xử lý mập mờ. ge=1 chặn repeat_count=0 — khi đó build_recurrence_rule
+    # bỏ COUNT và sinh ra luật lặp vô hạn.
+    recurrence: str = ""
+    repeat_count: int = Field(default=1, ge=1)
+    byday: List[str] = []
+    bymonthday: List[int] = []
+    bymonth: List[int] = []
+    timezone: str = "Asia/Ho_Chi_Minh"
 
 
 class LoginRequest(BaseModel):
@@ -127,9 +177,11 @@ class LoginRequest(BaseModel):
 
 @app.post("/auth/login")
 def login(request: LoginRequest, http_request: Request):
-    forwarded_for = http_request.headers.get("x-forwarded-for", "")
-    client_key = forwarded_for.split(",", 1)[0].strip() or (
-        http_request.client.host if http_request.client else "unknown"
+    # ⚠️ Không tự tách X-Forwarded-For ở đây. resolve_client_key mới biết phần nào của
+    #    header là do proxy của mình ghi (đáng tin) và phần nào do client tự khai.
+    client_key = resolve_client_key(
+        http_request.headers.get("x-forwarded-for", ""),
+        http_request.client.host if http_request.client else ""
     )
     if is_rate_limited(client_key):
         raise HTTPException(status_code=429, detail="Bạn đã thử quá nhiều lần. Vui lòng thử lại sau 5 phút.")
@@ -173,9 +225,24 @@ def get_classes(
         return events
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HttpError as e:
+        # Google intentionally returns 404 both when a calendar does not exist and
+        # when the caller cannot access it. Never expose the upstream URL, calendar
+        # ID, or raw Google exception to the browser.
+        upstream_status = getattr(e.resp, "status", None)
+        print(f"❌ Google Calendar error in get_classes (status={upstream_status}): {e}")
+        raise HTTPException(status_code=503, detail=calendar_http_error_detail(e))
     except Exception as e:
         print(f"❌ Error in get_classes: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "CLASSES_LOAD_FAILED",
+                "title": "Chưa thể tải lịch học",
+                "message": "Hệ thống gặp lỗi khi tải dữ liệu lịch.",
+                "action": "Vui lòng thử lại hoặc liên hệ quản trị viên.",
+            },
+        )
 
 # ✅ THÊM ENDPOINT MỚI: Lấy single event bằng ID
 @app.get("/classes/{event_id}")
@@ -265,6 +332,9 @@ def add_class(
         raise
     except IdempotencyConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except HttpError as e:
+        print(f"❌ Google Calendar error in add_class: {e}")
+        raise HTTPException(status_code=503, detail=calendar_http_error_detail(e))
     except TimeoutError as e:
         raise HTTPException(status_code=504, detail=f"Google Calendar timed out: {e}")
     except Exception as e:
@@ -322,34 +392,78 @@ def ai_suggest(teacher: str = None, duration_hours: int = 1):
     
 @app.post("/check-conflict")
 def api_check_conflict(request: ConflictCheckRequest):
-    """API endpoint kiểm tra xung đột - CHỈ DÙNG TRADITIONAL CHECK"""
+    """API endpoint kiểm tra xung đột - CHỈ DÙNG TRADITIONAL CHECK.
+
+    ⚠️ FAIL-CLOSED: khi không kiểm tra được PHẢI trả HTTP lỗi.
+    Trước đây endpoint nuốt exception và trả 200 kèm has_conflict=False, nên client
+    không phân biệt được "đã kiểm tra, không trùng" với "chưa kiểm tra được" và vẫn
+    cho tạo sự kiện trùng.
+    """
     try:
         print(f"🔄 Traditional conflict check for: {request.teacher}")
-        
-        # Lấy tất cả classes hiện có
-        all_classes = list_events('both')
-        
-        from check_conflict import traditional_conflict_check
-        
-        result = traditional_conflict_check(
-            existing_classes=all_classes,
-            teacher=request.teacher,
-            new_start=request.start,
-            new_end=request.end,
-            exclude_event_id=request.exclude_event_id
-        )
-        
-        # THÊM MESSAGE ĐƠN GIẢN
-        if result.get('has_conflict'):
-            result['message'] = f"⚠️ Giáo viên {request.teacher} có {len(result.get('conflicts', []))} xung đột lịch"
+
+        # 1️⃣ Bung luật lặp thành từng buổi cụ thể. Sự kiện đơn → đúng 1 buổi.
+        occurrences, truncated = expand_occurrences(request.start, request.end, request.model_dump())
+
+        # 2️⃣ Chuỗi lặp dài có thể vượt trần cửa sổ của list_events → nạp theo từng cụm,
+        #    nếu không các buổi cuối chuỗi sẽ không có dữ liệu đối chiếu.
+        conflicts = []
+        checked_occurrences = 0
+        for window in group_occurrences_into_windows(occurrences):
+            window_start, window_end = window_bounds(window)
+            existing_classes = list_events(
+                'both',
+                time_min=window_start.isoformat().replace('+00:00', 'Z'),
+                time_max=window_end.isoformat().replace('+00:00', 'Z')
+            )
+            window_result = find_conflicts(
+                existing_classes=existing_classes,
+                teacher=request.teacher,
+                occurrences=window,
+                exclude_event_id=request.exclude_event_id,
+                exclude_master_event_id=request.exclude_master_event_id
+            )
+            conflicts.extend(window_result['conflicts'])
+            checked_occurrences += window_result['checked_occurrences']
+
+        result = {
+            'has_conflict': len(conflicts) > 0,
+            # Giới hạn kích thước payload; conflict_count vẫn là tổng thật.
+            'conflicts': conflicts[:MAX_REPORTED_CONFLICTS],
+            'conflict_count': len(conflicts),
+            'checked_occurrences': checked_occurrences,
+            'occurrences_truncated': truncated,
+        }
+
+        if result['has_conflict']:
+            result['message'] = (
+                f"⚠️ Giáo viên {request.teacher} bị trùng {len(conflicts)} lượt "
+                f"trên {checked_occurrences} buổi đã kiểm tra"
+            )
         else:
-            result['message'] = f"✅ Không có xung đột với giáo viên {request.teacher}"
-        
+            result['message'] = (
+                f"✅ Không có xung đột với giáo viên {request.teacher} "
+                f"({checked_occurrences} buổi đã kiểm tra)"
+            )
+
         return result
-        
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HttpError as e:
+        print(f"❌ Google Calendar error in conflict check: {e}")
+        raise HTTPException(status_code=503, detail=calendar_http_error_detail(e))
     except Exception as e:
         print(f"❌ Conflict check error: {e}")
-        return {'has_conflict': False, 'error': str(e), 'message': 'Lỗi kiểm tra xung đột'}
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "CONFLICT_CHECK_FAILED",
+                "title": "Không thể kiểm tra trùng lịch",
+                "message": "Hệ thống chưa thể kiểm tra lịch hiện có.",
+                "action": "Sự kiện chưa được lưu. Vui lòng thử lại.",
+            },
+        )
 
 @app.get("/timezones")
 def get_timezones():

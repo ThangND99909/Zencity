@@ -1,21 +1,6 @@
 /* frontend/src/components/DeleteConfirmationModal.module.css */
 
 /* Delete Confirmation Modal */
-.deleteConfirmOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  padding: 16px;
-  overflow-y: auto;
-}
-
 .deleteConfirmBox.deleteConfirmBox {
   background: white;
   border-radius: 12px;
@@ -146,11 +131,6 @@
 }
 
 @media (max-width: 480px) {
-  .deleteConfirmOverlay {
-    align-items: flex-start;
-    padding: 8px;
-  }
-
   .deleteConfirmBox.deleteConfirmBox {
     width: 100%;
     padding: 18px 14px;

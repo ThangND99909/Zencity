@@ -19,6 +19,9 @@ google-generativeai==0.3.0
 # Timezone handling
 pytz==2023.3
 
+# Bung luật lặp (RRULE) để kiểm tra trùng lịch trên mọi buổi của chuỗi
+python-dateutil==2.9.0.post0
+
 # Environment variables
 python-dotenv==1.0.0
 

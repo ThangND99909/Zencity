@@ -1,5 +1,5 @@
 // frontend/src/pages/AdminSchedule.js
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   getClasses,
   addClass,
@@ -19,6 +19,8 @@ import ConfirmationDialog from "../components/ConfirmationDialog";
 
 export default function AdminSchedule() {
   const [classes, setClasses] = useState([]);
+  const [calendarClasses, setCalendarClasses] = useState(null);
+  const [calendarWindow, setCalendarWindow] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingType, setLoadingType] = useState('default');
@@ -29,11 +31,16 @@ export default function AdminSchedule() {
   const [isPasscodeVerified, setIsPasscodeVerified] = useState(() => Boolean(getAuthToken()));
   const [showPasscodeModal, setShowPasscodeModal] = useState(() => !getAuthToken());
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [calendarWriteState, setCalendarWriteState] = useState({
+    ready: false,
+    reason: "Đang kiểm tra kết nối Google Calendar…",
+  });
 
   // ✅ THÊM REF CHO CALENDAR VIEW
   const calendarViewRef = useRef(null);
   const createInFlightRef = useRef(false);
   const messageTimerRef = useRef(null);
+  const calendarFetchSequenceRef = useRef(0);
 
   // Hàm show loading
   const showLoading = (type = 'default', customMessage = '') => {
@@ -64,8 +71,11 @@ export default function AdminSchedule() {
   const handleLogout = () => {
     clearAuthToken();
     setClasses([]);
+    setCalendarClasses(null);
+    setCalendarWindow(null);
     setIsPasscodeVerified(false);
     setShowPasscodeModal(true);
+    setCalendarWriteState({ ready: false, reason: "Cần đăng nhập để kiểm tra lịch." });
   };
 
   useEffect(() => {
@@ -108,6 +118,10 @@ export default function AdminSchedule() {
   const loadClasses = async (filter = calendarFilter, { force = false, background = false } = {}) => {
     try {
       if (!background) setError(null);
+      setCalendarWriteState({
+        ready: false,
+        reason: "Đang kiểm tra kết nối Google Calendar…",
+      });
 
       // ⚡ Hiển thị cache ngay lập tức nếu còn hợp lệ (bỏ qua khi force)
       if (!force) {
@@ -119,8 +133,17 @@ export default function AdminSchedule() {
             // Vẫn fetch mới ở nền nhưng không show loading
             getClasses(filter).then(fresh => {
               setClasses(fresh);
+              setCalendarWriteState({ ready: true, reason: "" });
               localStorage.setItem(cacheKey, JSON.stringify({ data: fresh, ts: Date.now() }));
-            }).catch(() => {}); // lỗi nền thì bỏ qua
+            }).catch((err) => {
+              const notice = {
+                title: err.userTitle || "Không thể kết nối lịch học",
+                message: err.message || "Hệ thống chưa thể truy cập Google Calendar.",
+                action: err.userAction || "Vui lòng kiểm tra quyền truy cập và thử lại.",
+              };
+              setCalendarWriteState({ ready: false, reason: `${notice.message} ${notice.action}` });
+              setError(notice);
+            });
             return;
           }
         } catch (_) {}
@@ -130,12 +153,21 @@ export default function AdminSchedule() {
       if (!background) showLoading('classes');
       const data = await getClasses(filter);
       setClasses(data);
+      setCalendarWriteState({ ready: true, reason: "" });
       try {
         localStorage.setItem(getCacheKey(filter), JSON.stringify({ data, ts: Date.now() }));
       } catch (_) {}
     } catch (err) {
+      const notice = {
+        title: err.userTitle || "Không thể tải lịch học",
+        message: err.message || "Hệ thống chưa thể tải dữ liệu lịch.",
+        action: err.userAction || "Vui lòng thử lại.",
+      };
+      setCalendarWriteState({ ready: false, reason: `${notice.message} ${notice.action}` });
       // Ở chế độ nền: ghi đã thành công, chỉ log lỗi làm mới, không làm phiền người dùng
-      if (!background) setError("Failed to load classes: " + err.message);
+      if (!background) {
+        setError(notice);
+      }
       console.error("Load classes error:", err);
     } finally {
       if (!background) hideLoading();
@@ -143,9 +175,54 @@ export default function AdminSchedule() {
   };
 
   // 🔄 Làm mới danh sách ở nền sau khi ghi: không hiện overlay, luôn lấy dữ liệu mới
+  const loadCalendarWindow = useCallback(async (eventWindow, { silent = false } = {}) => {
+    if (!eventWindow?.timeMin || !eventWindow?.timeMax) return;
+
+    const requestSequence = ++calendarFetchSequenceRef.current;
+    try {
+      const data = await getClasses(calendarFilter, eventWindow);
+      // A slower response for the previous month must not replace the month that
+      // the user is currently viewing.
+      if (requestSequence === calendarFetchSequenceRef.current) {
+        setCalendarClasses(data);
+      }
+    } catch (err) {
+      if (!silent && requestSequence === calendarFetchSequenceRef.current) {
+        setError({
+          title: err.userTitle || "Không thể tải tháng đang xem",
+          message: err.message || "Hệ thống chưa thể tải đầy đủ sự kiện trong khoảng thời gian này.",
+          action: err.userAction || "Vui lòng thử lại.",
+        });
+      }
+      console.error("Load visible calendar window error:", err);
+    }
+  }, [calendarFilter]);
+
+  const handleCalendarVisibleRangeChange = useCallback((eventWindow) => {
+    if (!eventWindow?.timeMin || !eventWindow?.timeMax) return;
+    setCalendarWindow((currentWindow) => {
+      if (
+        currentWindow?.timeMin === eventWindow.timeMin &&
+        currentWindow?.timeMax === eventWindow.timeMax
+      ) {
+        return currentWindow;
+      }
+      return eventWindow;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isPasscodeVerified && showCalendar && calendarWindow) {
+      loadCalendarWindow(calendarWindow);
+    }
+  }, [calendarWindow, isPasscodeVerified, loadCalendarWindow, showCalendar]);
+
   const refreshClassesInBackground = (filter = calendarFilter) => {
     invalidateLocalCache(filter);
     loadClasses(filter, { force: true, background: true });
+    if (calendarWindow) {
+      loadCalendarWindow(calendarWindow, { silent: true });
+    }
   };
 
   // 🔐 Chỉ load data khi đã xác thực passcode
@@ -158,7 +235,11 @@ export default function AdminSchedule() {
   const showMessage = (message, type = "error") => {
     if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
     if (type === "error") {
-      setError(message);
+      setError(typeof message === "string" ? {
+        title: "Không thể hoàn tất thao tác",
+        message,
+        action: "Vui lòng kiểm tra lại.",
+      } : message);
       setSuccess(null);
     } else {
       setSuccess(message);
@@ -177,6 +258,9 @@ export default function AdminSchedule() {
   
 
   const handleAdd = async (data) => {
+    if (!calendarWriteState.ready) {
+      throw new Error(calendarWriteState.reason || "Google Calendar chưa sẵn sàng.");
+    }
     if (createInFlightRef.current) {
       throw new Error("A class creation request is already in progress");
     }
@@ -252,6 +336,11 @@ export default function AdminSchedule() {
   // frontend/src/pages/AdminSchedule.js
 
   const handleUpdate = async (data) => {
+    if (!calendarWriteState.ready) {
+      const blockedError = new Error(calendarWriteState.reason || "Google Calendar chưa sẵn sàng.");
+      showMessage(blockedError.message);
+      throw blockedError;
+    }
     try {
       showLoading('update');
       const id = data.id;
@@ -303,6 +392,10 @@ export default function AdminSchedule() {
   };
 
   const handleDelete = async (eventData) => {
+    if (!calendarWriteState.ready) {
+      showMessage(calendarWriteState.reason || "Google Calendar chưa sẵn sàng. Không thể xóa sự kiện.");
+      return;
+    }
     const requestedMode = typeof eventData === "object" ? (eventData.deleteMode || "this") : "this";
     const alreadyConfirmed = typeof eventData === "object" && eventData._confirmed === true;
     if (!alreadyConfirmed) {
@@ -352,8 +445,13 @@ export default function AdminSchedule() {
       // ⚡ Làm mới ở nền, không chặn UI chờ tải lại (mục 1)
       refreshClassesInBackground(calendarFilter);
 
-      // Hiển thị thông báo thành công
-      showMessage("✅ Đã xóa sự kiện thành công!", "success");
+      // Backend trả 'already_deleted' khi sự kiện không còn tồn tại (danh sách đang cũ).
+      showMessage(
+        result?.status === "already_deleted"
+          ? "Sự kiện này đã được xóa trước đó."
+          : "✅ Đã xóa sự kiện thành công!",
+        "success"
+      );
       
     } catch (err) {
       console.error("❌ Delete error:", err);
@@ -368,6 +466,9 @@ export default function AdminSchedule() {
       // Bấm Refresh → luôn lấy dữ liệu mới (bỏ qua cache localStorage cũ)
       invalidateLocalCache(calendarFilter);
       await loadClasses(calendarFilter, { force: true });
+      if (calendarWindow) {
+        await loadCalendarWindow(calendarWindow);
+      }
 
       // Delay một chút để loading ẩn đi rồi mới hiển thị thông báo
       setTimeout(() => {
@@ -454,8 +555,11 @@ export default function AdminSchedule() {
       {error && (
         <div role="alert" aria-live="assertive" className={`${styles.elegantNotify} ${styles.elegantError}`}>
           <div className={styles.elegantIcon}>⚠</div>
-          <div className={styles.elegantText}>{error}</div>
-          <div className={styles.elegantSubtext}>Vui lòng kiểm tra lại</div>
+          <div className={styles.elegantBody}>
+            <div className={styles.elegantTitle}>{error.title || "Đã xảy ra lỗi"}</div>
+            <div className={styles.elegantText}>{error.message || error}</div>
+            <div className={styles.elegantSubtext}>{error.action || "Vui lòng thử lại."}</div>
+          </div>
           <button aria-label="Đóng thông báo" className={styles.elegantClose} onClick={() => setError(null)}>
             ×
           </button>
@@ -465,12 +569,19 @@ export default function AdminSchedule() {
       <div className={styles.mainContent}>
         {showCalendar ? (
           <div className={styles.calendarWrapper}>
-            <CalendarView
-              ref={calendarViewRef}
-              events={classes}
-              onCreateEvent={(event) => event.id ? handleUpdate(event) : handleAdd(event)}
+              <CalendarView
+                ref={calendarViewRef}
+                events={calendarClasses ?? classes}
+                programEvents={classes}
+                onCreateEvent={(event) => event.id ? handleUpdate(event) : handleAdd(event)}
               onDeleteEvent={handleDelete}
               calendarFilter={calendarFilter}
+              onVisibleRangeChange={handleCalendarVisibleRangeChange}
+              writeDisabled={!calendarWriteState.ready}
+              writeDisabledReason={calendarWriteState.reason}
+              onCalendarUnavailable={(reason) => {
+                setCalendarWriteState({ ready: false, reason });
+              }}
             />
           </div>
         ) : (

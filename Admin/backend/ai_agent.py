@@ -16,7 +16,7 @@ else:
     print("Warning: GEMINI_API_KEY not found")
 
 
-def suggest_schedule(existing_classes, teacher=None, duration_hours=1, preferred_times=None):
+def suggest_schedule(existing_classes, teacher=None, duration_hours=1):
     """
     Gợi ý lịch học với Google Gemini
     """
@@ -102,11 +102,11 @@ def suggest_schedule_fallback(existing_classes, teacher=None, duration_hours=1):
         return {"error": f"Fallback failed: {str(e)}"}
 
 # Function chính với fallback
-def get_schedule_suggestion(existing_classes, teacher=None, duration_hours=1, preferred_times=None):
+def get_schedule_suggestion(existing_classes, teacher=None, duration_hours=1):
     """
     Main function với fallback mechanism
     """
-    result = suggest_schedule(existing_classes, teacher, duration_hours, preferred_times)
+    result = suggest_schedule(existing_classes, teacher, duration_hours)
 
     if 'error' in result:
         print(f"Gemini failed: {result['error']}, using fallback")

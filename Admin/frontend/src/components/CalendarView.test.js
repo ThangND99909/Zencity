@@ -1,4 +1,4 @@
-import React, { act } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import CalendarView from "./CalendarView";
 import {
@@ -43,6 +43,206 @@ describe("CalendarView edit lifecycle", () => {
     container.remove();
     consoleError.mockRestore();
     jest.clearAllMocks();
+  });
+
+  const renderEmptyCalendar = async (onCreateEvent) => {
+    await act(async () => {
+      root.render(
+        <CalendarView
+          events={[]}
+          onCreateEvent={onCreateEvent}
+          onDeleteEvent={jest.fn()}
+          calendarFilter="both"
+        />
+      );
+      await flushPromises();
+    });
+  };
+
+  test("disables event creation when Google Calendar is unavailable", async () => {
+    await act(async () => {
+      root.render(
+        <CalendarView
+          events={[]}
+          onCreateEvent={jest.fn()}
+          onDeleteEvent={jest.fn()}
+          calendarFilter="both"
+          writeDisabled
+          writeDisabledReason="Google Calendar chưa được chia sẻ."
+        />
+      );
+      await flushPromises();
+    });
+
+    const createButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent.trim() === "+ Tạo");
+    expect(createButton).toBeTruthy();
+    expect(createButton.disabled).toBe(true);
+    expect(createButton.title).toContain("chưa được chia sẻ");
+  });
+
+  test("lists managed programs and programs extracted from event title suffixes", async () => {
+    const now = new Date();
+    const end = new Date(now.getTime() + 60 * 60 * 1000);
+    const events = [
+      {
+        id: "beginner-vietnamese",
+        summary: "Room 2X - Tutoring Katherine - Beginner Vietnamese",
+        start: { dateTime: now.toISOString() },
+        end: { dateTime: end.toISOString() }
+      },
+      {
+        id: "beginner",
+        summary: "Room 5B - Tutoring Vietnamese - Student (13y)- Beginner",
+        start: { dateTime: now.toISOString() },
+        end: { dateTime: end.toISOString() }
+      }
+    ];
+
+    await act(async () => {
+      root.render(
+        <CalendarView
+          events={[events[0]]}
+          programEvents={[events[1]]}
+          onCreateEvent={jest.fn()}
+          onDeleteEvent={jest.fn()}
+          calendarFilter="both"
+        />
+      );
+      await flushPromises();
+    });
+
+    const createButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent.trim() === "+ Tạo");
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const labels = Array.from(container.querySelectorAll("#event-program option"))
+      .map((option) => option.textContent.trim());
+    expect(labels).toEqual(expect.arrayContaining([
+      "-- Chọn chương trình --",
+      "Program A",
+      "ESL KIDS and JUNIOR",
+      "Beginner Vietnamese",
+      "Beginner"
+    ]));
+    expect(labels.filter((label) => label === "-- Chọn chương trình --")).toHaveLength(1);
+  });
+
+  const setFieldValue = async (labelText, value, selector = "input") => {
+    const element = Array.from(container.querySelectorAll("label"))
+      .find((label) => label.textContent.includes(labelText))
+      .querySelector(selector);
+    const prototype = element.tagName === "SELECT"
+      ? window.HTMLSelectElement.prototype
+      : window.HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, "value").set.call(element, value);
+    await act(async () => {
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+
+  const fillNewEventForm = async () => {
+    const createButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent.trim() === "+ Tạo");
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await setFieldValue("Tên lớp", "New Class");
+    await setFieldValue("Giáo viên", "Teacher C");
+    await setFieldValue("Chương trình", "program-1", "select");
+    await setFieldValue("Link Zoom", "https://zoom.example/new");
+  };
+
+  const clickButton = async (label) => {
+    const button = Array.from(container.querySelectorAll("button"))
+      .find((element) => element.textContent.includes(label));
+    expect(button).toBeTruthy();
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flushPromises();
+    });
+  };
+
+  // Bộ 3 test dưới đây khoá lại lỗi: nút lưu từng được gắn onClick={handleSave},
+  // khiến React truyền SyntheticEvent vào skipConflictCheck (truthy) → bước kiểm tra
+  // trùng lịch bị bỏ qua hoàn toàn và sự kiện trùng vẫn được tạo.
+  test("runs the conflict check before creating an event", async () => {
+    const onCreateEvent = jest.fn().mockResolvedValue({ id: "created-event" });
+    await renderEmptyCalendar(onCreateEvent);
+    await fillNewEventForm();
+    await clickButton("Tạo mới");
+
+    expect(checkScheduleConflict).toHaveBeenCalledTimes(1);
+    expect(checkScheduleConflict).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teacher: "Teacher C",
+        start: expect.any(String),
+        end: expect.any(String),
+        excludeEventId: undefined,
+        recurrence: "",
+      })
+    );
+    expect(onCreateEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test("sends the recurrence rule so every occurrence gets checked", async () => {
+    const onCreateEvent = jest.fn().mockResolvedValue({ id: "created-event" });
+    await renderEmptyCalendar(onCreateEvent);
+    await fillNewEventForm();
+    await setFieldValue("Lặp lại", "DAILY", "select");
+    await setFieldValue("Số lần lặp", "5");
+    await clickButton("Tạo mới");
+
+    // Backend cần luật lặp để bung ra đủ 5 buổi; nếu chỉ gửi start/end thì 4 buổi
+    // sau không được kiểm tra và có thể trùng lịch mà không ai biết.
+    expect(checkScheduleConflict).toHaveBeenCalledWith(
+      expect.objectContaining({ recurrence: "DAILY", repeatCount: 5 })
+    );
+    // Luật lặp dùng để kiểm tra phải khớp đúng luật lặp được lưu.
+    const saved = onCreateEvent.mock.calls[0][0];
+    expect(saved.recurrence).toBe("DAILY");
+    expect(saved.repeat_count).toBe(5);
+  });
+
+  test("does not create the event while a conflict is unresolved", async () => {
+    checkScheduleConflict.mockResolvedValue({
+      has_conflict: true,
+      conflicts: [
+        {
+          event_summary: "Existing Class",
+          event_teacher: "Teacher C",
+          event_start: "2026-08-15T02:00:00Z",
+          event_end: "2026-08-15T03:00:00Z",
+        },
+      ],
+    });
+    const onCreateEvent = jest.fn().mockResolvedValue({ id: "created-event" });
+    await renderEmptyCalendar(onCreateEvent);
+    await fillNewEventForm();
+    await clickButton("Tạo mới");
+
+    expect(onCreateEvent).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Existing Class");
+
+    // Người dùng chủ động chấp nhận trùng lịch thì mới được lưu.
+    await clickButton("Vẫn lưu sự kiện");
+    expect(onCreateEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not create the event when the conflict check fails", async () => {
+    checkScheduleConflict.mockRejectedValue(new Error("backend unavailable"));
+    const onCreateEvent = jest.fn().mockResolvedValue({ id: "created-event" });
+    await renderEmptyCalendar(onCreateEvent);
+    await fillNewEventForm();
+    await clickButton("Tạo mới");
+
+    expect(onCreateEvent).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Không kiểm tra được trùng lịch");
+    expect(container.textContent).toContain("CHƯA được lưu");
   });
 
   test("waits for edit data before opening form and closes safely after update", async () => {
@@ -121,49 +321,9 @@ describe("CalendarView edit lifecycle", () => {
 
   test("creates an event and clears the popup state without a null render", async () => {
     const onCreateEvent = jest.fn().mockResolvedValue({ id: "created-event" });
-    await act(async () => {
-      root.render(
-        <CalendarView
-          events={[]}
-          onCreateEvent={onCreateEvent}
-          onDeleteEvent={jest.fn()}
-          calendarFilter="both"
-        />
-      );
-      await flushPromises();
-    });
-
-    const createButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent.trim() === "+ Tạo");
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    const field = (labelText, selector = "input") => Array.from(container.querySelectorAll("label"))
-      .find((label) => label.textContent.includes(labelText))
-      .querySelector(selector);
-    const changeValue = async (element, value) => {
-      const prototype = element.tagName === "SELECT"
-        ? window.HTMLSelectElement.prototype
-        : window.HTMLInputElement.prototype;
-      Object.getOwnPropertyDescriptor(prototype, "value").set.call(element, value);
-      await act(async () => {
-        element.dispatchEvent(new Event("change", { bubbles: true }));
-        element.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-    };
-
-    await changeValue(field("Tên lớp"), "New Class");
-    await changeValue(field("Giáo viên"), "Teacher C");
-    await changeValue(field("Chương trình", "select"), "program-1");
-    await changeValue(field("Link Zoom"), "https://zoom.example/new");
-
-    const submitButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent.includes("Tạo mới"));
-    await act(async () => {
-      submitButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await flushPromises();
-    });
+    await renderEmptyCalendar(onCreateEvent);
+    await fillNewEventForm();
+    await clickButton("Tạo mới");
 
     expect(onCreateEvent).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain("Thêm sự kiện mới");
@@ -220,6 +380,120 @@ describe("CalendarView edit lifecycle", () => {
     const nextCard = container.querySelector('[title*="Day two event"]');
     expect(nextCard).toBeTruthy();
     expect(nextCard).not.toBe(firstCard);
+  });
+
+  test("renders Google-style month event rows and opens the remaining-events list", async () => {
+    const starts = [5, 7, 9, 11].map((hour) => {
+      const date = new Date();
+      date.setHours(hour, 0, 0, 0);
+      return date;
+    });
+    const monthEvents = starts.map((start, index) => ({
+      id: `month-event-${index}`,
+      summary: `Month class ${index + 1}`,
+      classname: `Month class ${index + 1}`,
+      teacher: "Teacher",
+      program: "Program A",
+      start: { dateTime: start.toISOString(), timeZone: "Asia/Ho_Chi_Minh" },
+      end: {
+        dateTime: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
+        timeZone: "Asia/Ho_Chi_Minh",
+      },
+      _calendar_source: "odd",
+    }));
+
+    await act(async () => {
+      root.render(
+        <CalendarView
+          events={monthEvents}
+          onCreateEvent={jest.fn()}
+          onDeleteEvent={jest.fn()}
+          calendarFilter="both"
+        />
+      );
+      await flushPromises();
+    });
+
+    const monthButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent.trim() === "Tháng");
+    await act(async () => {
+      monthButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const visibleEventRows = Array.from(container.querySelectorAll("button"))
+      .filter((button) => button.title?.startsWith("Month class"));
+    expect(visibleEventRows).toHaveLength(2);
+    expect(visibleEventRows[0].textContent).toMatch(/5AMMonth class 1/);
+
+    const moreButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent.trim() === "2 mục khác");
+    expect(moreButton).toBeTruthy();
+
+    await act(async () => {
+      moreButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const overflowDialog = container.querySelector('[role="dialog"][aria-label^="Sự kiện ngày"]');
+    expect(overflowDialog).toBeTruthy();
+    monthEvents.forEach((event) => {
+      expect(overflowDialog.textContent).toContain(event.summary);
+    });
+  });
+
+  test("reports the complete visible month range when the user changes months", async () => {
+    const onVisibleRangeChange = jest.fn();
+    await act(async () => {
+      root.render(
+        <CalendarView
+          events={[]}
+          onCreateEvent={jest.fn()}
+          onDeleteEvent={jest.fn()}
+          calendarFilter="both"
+          onVisibleRangeChange={onVisibleRangeChange}
+        />
+      );
+      await flushPromises();
+    });
+
+    const monthButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent.trim() === "Tháng");
+    await act(async () => {
+      monthButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flushPromises();
+    });
+
+    const selectedMonth = new Date();
+    const firstOfMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
+    const mondayIndex = (firstOfMonth.getDay() + 6) % 7;
+    const expectedStart = new Date(
+      selectedMonth.getFullYear(),
+      selectedMonth.getMonth(),
+      1 - mondayIndex
+    );
+    expectedStart.setHours(0, 0, 0, 0);
+    const lastOfMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0);
+    const lastDayIndex = (lastOfMonth.getDay() + 6) % 7;
+    const expectedEnd = new Date(
+      selectedMonth.getFullYear(),
+      selectedMonth.getMonth() + 1,
+      7 - lastDayIndex
+    );
+    expectedEnd.setHours(0, 0, 0, 0);
+
+    expect(onVisibleRangeChange).toHaveBeenLastCalledWith({
+      timeMin: expectedStart.toISOString(),
+      timeMax: expectedEnd.toISOString(),
+    });
+
+    const nextButton = container.querySelector('[aria-label="Khoảng thời gian tiếp theo"]');
+    await act(async () => {
+      nextButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flushPromises();
+    });
+
+    const nextRange = onVisibleRangeChange.mock.calls.at(-1)[0];
+    expect(new Date(nextRange.timeMin).getTime()).toBeGreaterThan(expectedStart.getTime());
+    expect(new Date(nextRange.timeMax).getTime()).toBeGreaterThan(new Date(nextRange.timeMin).getTime());
   });
 
   test.each(["this", "following"])(
@@ -307,6 +581,20 @@ describe("CalendarView edit lifecycle", () => {
     expect(onCreateEvent.mock.calls[0][0].edit_mode).toBe(editMode);
     expect(onCreateEvent.mock.calls[0][0].start).toMatch(/\+07:00$/);
     expect(container.textContent).not.toContain(`Chỉnh sửa: ${summary}`);
+
+    const conflictPayload = checkScheduleConflict.mock.calls[0][0];
+    expect(conflictPayload.excludeEventId).toBe(instance.id);
+    if (editMode === "following") {
+      // Cả chuỗi bị thay thế → phải loại trừ chuỗi cũ, nếu không mọi buổi của chính
+      // chuỗi đó sẽ bị báo trùng với nhau.
+      expect(conflictPayload.excludeMasterEventId).toBe(master.id);
+      expect(conflictPayload.recurrence).toBe("WEEKLY");
+    } else {
+      // Mode 'this' chỉ tách đúng một buổi thành sự kiện đơn: không còn luật lặp, và
+      // các buổi còn lại của chuỗi VẪN phải được so trùng.
+      expect(conflictPayload.excludeMasterEventId).toBeNull();
+      expect(conflictPayload.recurrence).toBe("");
+    }
 
     if (editMode === "following") {
       const updatedInstance = {

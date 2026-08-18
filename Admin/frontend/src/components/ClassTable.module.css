@@ -1,6 +1,6 @@
 .tableContainer {
   width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
   border-radius: 12px;
   background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
   border: 1px solid #e9ecef;
@@ -179,7 +179,7 @@
 }
 
 .scheduleTableWrapper {
-  overflow-x: auto;
+  overflow-x: hidden;
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-inline: contain;
@@ -196,7 +196,8 @@
 
 .scheduleTable {
   width: 100%;
-  min-width: 1550px;
+  min-width: 0;
+  max-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -243,17 +244,17 @@
 }
 
 .scheduleClassColumn {
-  width: 190px;
+  width: 13%;
   left: 0;
   z-index: 5 !important;
 }
 
 .scheduleZoomColumn {
-  width: 300px;
+  width: 21%;
 }
 
 .scheduleDayColumn {
-  width: 150px;
+  width: 9.428%;
 }
 
 .scheduleClassCell {
@@ -603,6 +604,27 @@
     font-size: 12px;
     text-align: center;
   }
+
+  .scheduleTableWrapper {
+    overflow-x: auto;
+  }
+
+  .scheduleTable {
+    min-width: 1240px;
+    max-width: none;
+  }
+
+  .scheduleClassColumn {
+    width: 160px;
+  }
+
+  .scheduleZoomColumn {
+    width: 240px;
+  }
+
+  .scheduleDayColumn {
+    width: 120px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -636,19 +658,4 @@
     flex-direction: column;
   }
 
-  .scheduleTable {
-    min-width: 1120px;
-  }
-
-  .scheduleClassColumn {
-    width: 160px;
-  }
-
-  .scheduleZoomColumn {
-    width: 240px;
-  }
-
-  .scheduleDayColumn {
-    width: 120px;
-  }
 }

@@ -8,7 +8,7 @@ const safeFetch = async (fn, retries = 3, delay = 5000) => {
       return await fn();
     } catch (error) {
       // Nếu là lỗi kết nối (Render sleep)
-      if (error.message.includes("Cannot connect to server") || error.code === "ECONNABORTED") {
+      if (!error.response || error.code === "ECONNABORTED") {
         console.warn(`⚙️ Backend đang khởi động... thử lại sau ${delay / 1000}s (${i + 1}/${retries})`);
         if (i < retries - 1) {
           await new Promise(res => setTimeout(res, delay));
@@ -41,6 +41,40 @@ const createRequestId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 };
 
+const containsTechnicalDetails = (value) =>
+  typeof value === "string" &&
+  /(https?:\/\/|googleapis\.com|HttpError|Traceback|stack trace|calendar\/v3)/i.test(value);
+
+export const getApiErrorInfo = (payload, status) => {
+  const detail = payload?.detail;
+
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    return {
+      code: detail.code || "REQUEST_FAILED",
+      title: detail.title || "Không thể hoàn tất yêu cầu",
+      message: detail.message || "Hệ thống không thể xử lý yêu cầu này.",
+      action: detail.action || "Vui lòng thử lại.",
+    };
+  }
+
+  const serverMessage = typeof detail === "string" ? detail : payload?.message;
+  if (serverMessage && !containsTechnicalDetails(serverMessage)) {
+    return {
+      code: "REQUEST_FAILED",
+      title: status >= 500 ? "Hệ thống đang gặp sự cố" : "Không thể hoàn tất yêu cầu",
+      message: serverMessage,
+      action: "Vui lòng kiểm tra lại và thử lại.",
+    };
+  }
+
+  return {
+    code: "REQUEST_FAILED",
+    title: "Hệ thống đang gặp sự cố",
+    message: "Không thể kết nối đến dịch vụ lịch.",
+    action: "Vui lòng thử lại hoặc liên hệ quản trị viên.",
+  };
+};
+
 // Tạo axios instance với config mặc định
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -70,14 +104,20 @@ apiClient.interceptors.response.use(
     if (error.response) {
       // Server trả về error status (4xx, 5xx)
       const serverError = error.response.data;
-      error.message = serverError.detail || serverError.message || `Server error: ${error.response.status}`;
+      const errorInfo = getApiErrorInfo(serverError, error.response.status);
+      error.message = errorInfo.message;
+      error.appCode = errorInfo.code;
+      error.userTitle = errorInfo.title;
+      error.userAction = errorInfo.action;
       if (error.response.status === 401 && error.config?.url !== "/auth/login") {
         clearAuthToken();
         window.dispatchEvent(new CustomEvent("zencity:auth-required"));
       }
     } else if (error.request) {
       // Request được gửi nhưng không nhận được response
-      error.message = "Cannot connect to server. Please check your connection.";
+      error.message = "Không thể kết nối đến máy chủ.";
+      error.userTitle = "Mất kết nối";
+      error.userAction = "Vui lòng kiểm tra mạng và thử lại.";
     } else {
       // Something happened in setting up the request
       error.message = error.message || "Unknown error occurred";
@@ -131,7 +171,7 @@ export const getClasses = async (calendarType = "both", eventWindow = getDefault
     });
   } catch (error) {
     console.error("Get classes error:", error);
-    throw new Error(`Failed to fetch classes: ${error.message}`);
+    throw error;
   }
 };
 
@@ -221,33 +261,53 @@ export const deleteClass = async (id, deleteMode = 'this') => {
 };
 
 // 🆕 HÀM ĐƠN GIẢN CHO CHECK CONFLICT (KHÔNG AI)
-export const checkScheduleConflict = async (teacher, start, end, excludeEventId = null) => {
-  try {
-    console.log("🔍 Checking schedule conflict (non-AI)...");
-    
-    const res = await apiClient.post(`/check-conflict`, {
-      teacher: teacher,
-      start: start,
-      end: end,
-      exclude_event_id: excludeEventId
-    }, {
-      timeout: 10000  // Giảm timeout vì không dùng AI
-    });
-    
-    console.log("✅ Conflict check result:", res.data);
-    return res.data;
-    
-  } catch (error) {
-    console.error("❌ Conflict check failed:", error);
-    
-    // Fallback đơn giản (KHÔNG AI)
-    return {
-      has_conflict: false,
-      conflicts: [],
-      message: "Không thể kiểm tra xung đột, vui lòng kiểm tra thủ công",
-      error: error.message
-    };
+// ⚠️ FAIL-CLOSED: hàm này PHẢI ném lỗi khi không kiểm tra được.
+//    Trước đây nó nuốt mọi lỗi và trả { has_conflict: false } → phía gọi không phân biệt
+//    được "đã kiểm tra, không trùng" với "chưa kiểm tra được", nên vẫn tạo sự kiện trùng.
+export const checkScheduleConflict = async ({
+  teacher,
+  start,
+  end,
+  excludeEventId = null,
+  // Chỉ set khi thao tác lưu thay thế cả chuỗi lặp ('following'/'all'), để các buổi
+  // khác của chính chuỗi đó không bị báo trùng với nhau.
+  excludeMasterEventId = null,
+  // Có luật lặp → backend kiểm tra TẤT CẢ các buổi, không chỉ buổi đầu.
+  recurrence = "",
+  repeatCount = 1,
+  byday = [],
+  bymonthday = [],
+  bymonth = [],
+  timezone = "Asia/Ho_Chi_Minh",
+}) => {
+  console.log("🔍 Checking schedule conflict (non-AI)...");
+
+  const res = await apiClient.post(`/check-conflict`, {
+    teacher,
+    start,
+    end,
+    exclude_event_id: excludeEventId,
+    exclude_master_event_id: excludeMasterEventId,
+    recurrence,
+    repeat_count: repeatCount,
+    byday,
+    bymonthday,
+    bymonth,
+    timezone,
+  }, {
+    // Backend phải nạp lịch từ Google (có cache 60s). Timeout quá ngắn sẽ chặn nhầm
+    // thao tác lưu hợp lệ, vì kiểm tra thất bại nay đồng nghĩa với không cho lưu.
+    timeout: 30000
+  });
+
+  // Phòng trường hợp backend trả HTTP 200 kèm khoá `error`: đó là "chưa kiểm tra được",
+  // không được hiểu thành "không trùng lịch".
+  if (res.data?.error) {
+    throw new Error(res.data.error);
   }
+
+  console.log("✅ Conflict check result:", res.data);
+  return res.data;
 };
 
 export const getEvent = async (eventId, calendarId = "primary") => {
