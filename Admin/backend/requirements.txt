@@ -29,6 +29,9 @@ python-dotenv==1.0.0
 httplib2==0.22.0
 requests==2.31.0
 
+# Build/runtime compatibility for packages that still use pkg_resources
+setuptools==68.0.0
+
 # Production server (optional, if not using uvicorn alone)
 # gunicorn==21.2.0
 
