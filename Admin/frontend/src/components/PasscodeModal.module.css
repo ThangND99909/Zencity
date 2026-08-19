@@ -98,6 +98,11 @@
   cursor: pointer;
   transition: background-color 0.3s;
   margin-top: 10px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
 }
 
 .submitButton:hover:not(:disabled) {
@@ -107,6 +112,38 @@
 .submitButton:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.statusSlot {
+  min-height: 18px;
+  margin-top: -7px;
+  text-align: center;
+}
+
+.slowMessage {
+  color: #667085;
+  font-size: 13px;
+  line-height: 18px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .srOnly {
@@ -138,5 +175,17 @@
 
   .submitButton {
     min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modalContent,
+  .errorMessage,
+  .slowMessage {
+    animation: none;
+  }
+
+  .spinner {
+    animation-duration: 1.5s;
   }
 }

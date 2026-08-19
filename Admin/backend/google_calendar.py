@@ -27,8 +27,10 @@ else:
         SERVICE_ACCOUNT_RAW, scopes=SCOPES
     )
 
-# 🔹 Khởi tạo Calendar service
-calendar_service = build('calendar', 'v3', credentials=credentials)
+# 🔹 Khởi tạo Calendar service. Kết nối Google thật sự chỉ nên
+# xảy ra khi một endpoint lịch được gọi, nhờ vậy /auth/login
+# không bị chặn khi process Render vừa khởi động.
+calendar_service = build('calendar', 'v3', credentials=credentials, cache_discovery=False)
 
 _transport_local = threading.local()
 
@@ -51,13 +53,6 @@ def create_calendar_http(timeout=30):
         _transport_local.transport = transport
         _transport_local.timeout = timeout
     return transport
-
-# Giữ nguyên bước kiểm tra kết nối cũ khi backend khởi động.
-try:
-    calendar_service.calendarList().list(maxResults=1).execute()
-    print("✅ Google Calendar service warmed up successfully!")
-except Exception as e:
-    print(f"⚠️ Warm-up failed: {e}")
 
 # ========== ĐỊNH NGHĨA 2 CALENDAR ==========
 CALENDAR_ODD = 'cf06d74dce3c09de7fcf3926e7c50d80b8d607f3eaadfa7eb1b52fdd361fb8eb@group.calendar.google.com'

@@ -6,6 +6,7 @@ export default function PasscodeModal({ isOpen, onSubmit }) {
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isTakingLong, setIsTakingLong] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -13,8 +14,19 @@ export default function PasscodeModal({ isOpen, onSubmit }) {
     if (isOpen) {
       setPasscode("");
       setError("");
+      setIsTakingLong(false);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setIsTakingLong(false);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setIsTakingLong(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [isLoading]);
 
   const handleInputChange = (e) => {
     setPasscode(e.target.value);
@@ -86,9 +98,18 @@ export default function PasscodeModal({ isOpen, onSubmit }) {
             type="submit" 
             disabled={isLoading || passcode.length === 0}
             className={styles.submitButton}
+            aria-busy={isLoading}
           >
-            {isLoading ? "Đang kiểm tra..." : "Xác nhận"}
+            {isLoading && <span className={styles.spinner} aria-hidden="true" />}
+            <span>{isLoading ? "Đang kiểm tra..." : "Xác nhận"}</span>
           </button>
+          <div className={styles.statusSlot} aria-live="polite" aria-atomic="true">
+            {isTakingLong && (
+              <span className={styles.slowMessage}>
+                Máy chủ đang khởi động, vui lòng chờ thêm một chút…
+              </span>
+            )}
+          </div>
         </form>
     </ModalShell>
   );
