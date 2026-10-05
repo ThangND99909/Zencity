@@ -2,6 +2,17 @@
 import { useState, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
 import styles from "./CalendarView.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
+import {
+  formatCompactInZone,
+  formatInZone,
+  formatRangeInZone,
+  getEventInstant,
+  getEventTimezone,
+  getViewerTimezone,
+  isKnownTimezone,
+  resolveDefaultTimezone,
+  sameWallClock,
+} from "../utils/eventTime";
 import { getEvent } from "../services/api";
 import { checkScheduleConflict } from "../services/api";
 import { getTimezones } from "../services/api";
@@ -83,15 +94,29 @@ const CalendarView = forwardRef(function CalendarView({
   const [showProgramModal, setShowProgramModal] = useState(false);
 
 
+  // Giống Google Calendar: cả lưới (vị trí + nhãn giờ + đường "bây giờ") và popup đều
+  // đo theo múi giờ của NGƯỜI ĐANG XEM, nên thầy cô ở Việt Nam, Mỹ hay nơi khác mở
+  // cùng một lớp đều thấy đúng giờ của mình. Múi giờ riêng của sự kiện chỉ dùng ở
+  // form sửa (giống edit view của Google).
+  const viewerTimezone = useMemo(() => getViewerTimezone(), []);
+
   const [myCalendars, setMyCalendars] = useState([
     { id: 1, name: "Calendar Lẻ (Giờ lẻ)", color: "#1a73e8", checked: true },
     { id: 2, name: "Calendar Chẵn (Giờ chẵn)", color: "#34a853", checked: true },
   ]);
   
 
+  // Chỉ Việt Nam và Hoa Kỳ. Giữ khớp với SUPPORTED_TIMEZONES ở backend (app.py) để
+  // form vẫn đúng ngay cả khi /timezones chưa kịp trả về.
   const [timezoneOptions, setTimezoneOptions] = useState([
     { value: "Asia/Ho_Chi_Minh", label: "🇻🇳 Giờ Việt Nam (UTC+7)" },
-    { value: "America/Chicago", label: "🇺🇸 Giờ miền Trung - Chicago (UTC-6/-5)" },
+    { value: "America/New_York", label: "🇺🇸 Giờ Miền Đông - New York (UTC-5/-4)" },
+    { value: "America/Chicago", label: "🇺🇸 Giờ Miền Trung - Chicago (UTC-6/-5)" },
+    { value: "America/Denver", label: "🇺🇸 Giờ Miền Núi - Denver (UTC-7/-6)" },
+    { value: "America/Phoenix", label: "🇺🇸 Giờ Arizona (UTC-7, không đổi giờ)" },
+    { value: "America/Los_Angeles", label: "🇺🇸 Giờ Miền Tây - Los Angeles (UTC-8/-7)" },
+    { value: "America/Anchorage", label: "🇺🇸 Giờ Alaska (UTC-9/-8)" },
+    { value: "Pacific/Honolulu", label: "🇺🇸 Giờ Hawaii (UTC-10, không đổi giờ)" },
   ]);
 
   const [managedProgramOptions, setManagedProgramOptions] = useState([]);
@@ -1059,9 +1084,8 @@ const CalendarView = forwardRef(function CalendarView({
     if (event.start?.date && !event.start?.dateTime) return "";
     const start = getEventBoundary(event.start);
     if (!start) return "";
-    const eventMoment = moment(start)
-      .tz(event.timezone || event.start?.timeZone || "Asia/Ho_Chi_Minh");
-    return eventMoment.format(eventMoment.minutes() === 0 ? "hA" : "h:mmA");
+    // Múi giờ người xem — phải khớp với hàng giờ mà khối sự kiện được vẽ vào.
+    return formatCompactInZone(start, viewerTimezone);
   };
 
   const isPastMonthEvent = (event) => {
@@ -1345,19 +1369,16 @@ const CalendarView = forwardRef(function CalendarView({
     }
     const defaultEnd = end > start ? end : new Date(start.getTime() + 60 * 60 * 1000);
     
-    const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    let defaultTimezone = "Asia/Ho_Chi_Minh";
-    
-    const commonTimezones = [
-      "America/Chicago", "America/New_York", "America/Los_Angeles",
-      "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"
-    ];
-    
-    if (commonTimezones.includes(userTimezone)) {
-      defaultTimezone = userTimezone;
-    }
-    
-    console.log(`🕐 User timezone: ${userTimezone}, using: ${defaultTimezone}`);
+    // Mặc định là múi giờ của chính người đang tạo lớp, miễn là nằm trong danh sách
+    // hỗ trợ (Việt Nam + Hoa Kỳ). Đối chiếu thẳng với dropdown nên hai bên không thể
+    // lệch nhau — trước đây danh sách viết cứng ở đây thiếu Denver/Phoenix/Honolulu…
+    // khiến lớp bị tạo lệch tới 13 tiếng so với ô giờ vừa bấm.
+    const defaultTimezone = resolveDefaultTimezone(
+      viewerTimezone,
+      timezoneOptions.map((tz) => tz.value)
+    );
+
+    console.log(`🕐 User timezone: ${viewerTimezone}, using: ${defaultTimezone}`);
     
     const defaultEvent = {
       title: "",
@@ -1932,9 +1953,7 @@ const CalendarView = forwardRef(function CalendarView({
                     </div>
                     <div className={styles.eventTeacher}>{normalizedEvent.teacher}</div>
                     <div className={styles.eventTime}>
-                      {moment(normalizedEvent.start?.dateTime)
-                        .tz(normalizedEvent.start?.timeZone || normalizedEvent.timezone || "Asia/Ho_Chi_Minh")
-                        .format("HH:mm")}
+                      {formatInZone(normalizedEvent.start?.dateTime, viewerTimezone)}
                     </div>
                   </div>
                 );
@@ -2045,9 +2064,7 @@ const CalendarView = forwardRef(function CalendarView({
                           >
                             <div className={styles.eventName}>{ne.name}</div>
                             <div className={styles.eventTime}>
-                              {moment(ne.start?.dateTime || ne.start)
-                                .tz(ne.timezone || "Asia/Ho_Chi_Minh")
-                                .format("HH:mm")}
+                              {formatInZone(getEventInstant(ne.start), viewerTimezone)}
                             </div>
                           </div>
                         );
@@ -2243,41 +2260,45 @@ const CalendarView = forwardRef(function CalendarView({
             <p><b>Giáo viên:</b> {selectedEvent.teacher}</p>
             <p><b>Chương trình:</b> {getProgramNameFromId(selectedEvent.program)}</p>
 
-            <p>
-              <b>Thời gian:</b>{" "}
-              {new Date(selectedEvent.start?.dateTime || selectedEvent.start).toLocaleString("vi-VN", {
-                hour12: false,
-                hour: "2-digit",
-                minute: "2-digit",
-                day: "2-digit",
-                month: "2-digit",
-                year: "numeric",
-              })}
-              {" – "}
-              {new Date(selectedEvent.end?.dateTime || selectedEvent.end).toLocaleString("vi-VN", {
-                hour12: false,
-                hour: "2-digit",
-                minute: "2-digit",
-                day: "2-digit",
-                month: "2-digit",
-                year: "numeric",
-              })}
-            </p>
+            {(() => {
+              // Giờ hiển thị theo múi giờ NGƯỜI XEM (giống Google Calendar), nên phải
+              // nói rõ đó là múi giờ nào — trước đây dòng "Múi giờ" bên dưới ghi múi giờ
+              // của SỰ KIỆN, khiến con số giờ ở trên bị hiểu nhầm là giờ Chicago/New York.
+              const start = getEventInstant(selectedEvent.start);
+              const end = getEventInstant(selectedEvent.end);
+              const eventTimezone = getEventTimezone(selectedEvent);
+              const timezoneOption = timezoneOptions.find(
+                (tz) => tz.value === eventTimezone
+              );
+              const eventTimezoneLabel = timezoneOption
+                ? timezoneOption.label
+                : eventTimezone;
+              const showOriginal =
+                isKnownTimezone(eventTimezone) &&
+                !sameWallClock(eventTimezone, viewerTimezone, start);
 
-            <p>
-              <b>Múi giờ:</b> {
-                (() => {
-                  const eventTimezone = selectedEvent.timezone || 
-                                      selectedEvent.start?.timeZone || 
-                                      selectedEvent.end?.timeZone ||
-                                      "Asia/Ho_Chi_Minh";
-                  
-                  const timezoneOption = timezoneOptions.find(tz => tz.value === eventTimezone);
-                  
-                  return timezoneOption ? timezoneOption.label : eventTimezone;
-                })()
-              }
-            </p>
+              return (
+                <>
+                  <p>
+                    <b>Thời gian:</b>{" "}
+                    {formatRangeInZone(start, end, viewerTimezone)}{" "}
+                    <span className={styles.timezoneHint}>
+                      (giờ của bạn — {viewerTimezone})
+                    </span>
+                  </p>
+
+                  <p>
+                    <b>Múi giờ sự kiện:</b> {eventTimezoneLabel}
+                    {showOriginal && (
+                      <>
+                        {" — "}
+                        {formatRangeInZone(start, end, eventTimezone)}
+                      </>
+                    )}
+                  </p>
+                </>
+              );
+            })()}
 
             {selectedEvent.recurrence_description && (
               <div className={styles.recurrenceDescription}>

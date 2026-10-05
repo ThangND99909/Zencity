@@ -1,8 +1,17 @@
 import re
 from datetime import datetime, timedelta, timezone
+
+import pytz
+
 from log_config import make_print
+from recurrence_helper import validate_recurrence_timezone, wall_clock_utc_range
 
 print = make_print(__name__)
+
+# Múi giờ dùng khi KHÔNG suy ra được từ dữ liệu — giống mặc định ở app.py và
+# calendar_crud.validate_timezone. Chỉ là lưới an toàn cuối cùng: mọi event do hệ
+# thống tạo đều mang sẵn 'timeZone', và frontend luôn gửi datetime kèm offset.
+DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh'
 
 # Cửa sổ thời gian tối đa cho một lần nạp lịch. list_events chặn ở 120 ngày nên để
 # 110 cho có biên an toàn (còn phải cộng thêm phần đệm hai đầu).
@@ -70,24 +79,61 @@ def extract_teacher_from_event(cls):
     return ""
 
 
-def parse_iso_datetime_flexible(dt_str):
-    """Parse datetime linh hoạt, xử lý cả với và không có timezone"""
+def parse_iso_datetime_flexible(dt_str, default_timezone=None, ambiguous='earliest'):
+    """Parse chuỗi ISO thành datetime AWARE (không bao giờ trả về naive).
+
+    - Chuỗi đã có offset ('Z', '+07:00', '-05:00') → giữ nguyên mốc thật, bỏ qua
+      ``default_timezone``. Đây là đường đi thực tế của mọi dữ liệu hiện nay.
+    - Chuỗi KHÔNG có offset là GIỜ TREO TƯỜNG: phải biết nó thuộc múi giờ nào mới
+      quy ra được mốc UTC. Dùng ``default_timezone`` (tên IANA, vd 'America/Chicago').
+
+    ⚠️ Trước đây hàm gắn cứng '+07:00' cho mọi chuỗi naive. Với lớp học ở Mỹ điều đó
+    làm lệch 12–13 tiếng — buổi học bị so trùng với một khung giờ hoàn toàn khác. Bản
+    thân '+07:00' cũng không diễn tả nổi múi giờ có đổi giờ: cùng 9:00 Chicago là
+    -06:00 mùa đông nhưng -05:00 mùa hè.
+
+    ``ambiguous`` chỉ có tác dụng đúng hai mốc DST, khi một giờ treo tường ứng với hai
+    mốc thật (fall-back) hoặc không tồn tại (spring-forward):
+      - 'earliest' cho mốc BẮT ĐẦU, 'latest' cho mốc KẾT THÚC
+      → khoảng thu được rộng nhất có thể, fail-closed, không bỏ sót xung đột.
+
+    Trả về None nếu chuỗi rỗng hoặc không parse được (caller tự quyết cách xử lý).
+    """
     if not dt_str:
         return None
 
+    text = str(dt_str).strip()
+    if not text:
+        return None
+
     try:
-        # Xử lý string có Z
-        if dt_str.endswith('Z'):
-            dt_str = dt_str.replace('Z', '+00:00')
-
-        # Nếu không có timezone, thêm timezone mặc định (Vietnam)
-        if 'T' in dt_str and '+' not in dt_str and '-' not in dt_str.split('T')[1]:
-            dt_str = dt_str + '+07:00'
-
-        return datetime.fromisoformat(dt_str)
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
     except ValueError as e:
         print(f"❌ Error parsing datetime {dt_str}: {e}")
         return None
+
+    if parsed.tzinfo is not None:
+        return parsed
+
+    tz = pytz.timezone(validate_recurrence_timezone(default_timezone or DEFAULT_TIMEZONE))
+    earliest, latest = wall_clock_utc_range(parsed, tz)
+    resolved = earliest if ambiguous == 'earliest' else latest
+    print(f"🕐 Naive datetime '{text}' → hiểu theo {tz} → {resolved.isoformat()}")
+    return resolved
+
+
+def event_timezone_of(cls):
+    """Múi giờ của một event Google — Google trả kèm 'timeZone' ở start/end.
+
+    Chỉ dùng khi dateTime không có offset. Mọi event do hệ thống này tạo đều được
+    insert kèm ``'timeZone': <múi giờ người dùng chọn>`` (xem calendar_crud.create_event),
+    nên đây mới là nguồn đúng để hiểu một giờ treo tường — không phải giờ Việt Nam.
+    """
+    for key in ('start', 'end'):
+        zone = (cls.get(key) or {}).get('timeZone')
+        if zone:
+            return zone
+    return None
 
 
 def master_id_of(event_id):
@@ -194,8 +240,12 @@ def find_conflicts(
         if not cls_teacher or normalize_teacher_name(cls_teacher) != normalized_teacher:
             continue
 
-        cls_start = parse_iso_datetime_flexible(cls.get('start', {}).get('dateTime', ''))
-        cls_end = parse_iso_datetime_flexible(cls.get('end', {}).get('dateTime', ''))
+        # Giờ treo tường phải đọc theo múi giờ của CHÍNH event đó, không phải giờ VN.
+        cls_zone = event_timezone_of(cls)
+        cls_start = parse_iso_datetime_flexible(
+            cls.get('start', {}).get('dateTime', ''), cls_zone, ambiguous='earliest')
+        cls_end = parse_iso_datetime_flexible(
+            cls.get('end', {}).get('dateTime', ''), cls_zone, ambiguous='latest')
         if not cls_start or not cls_end:
             continue
 
@@ -242,11 +292,16 @@ def traditional_conflict_check(
     new_start,
     new_end,
     exclude_event_id=None,
-    exclude_master_event_id=None
+    exclude_master_event_id=None,
+    timezone_name=None
 ):
-    """Kiểm tra trùng lịch cho MỘT buổi. Giữ chữ ký cũ cho các caller đơn lẻ."""
-    start_dt = parse_iso_datetime_flexible(new_start)
-    end_dt = parse_iso_datetime_flexible(new_end)
+    """Kiểm tra trùng lịch cho MỘT buổi. Giữ chữ ký cũ cho các caller đơn lẻ.
+
+    ``timezone_name``: múi giờ của sự kiện, chỉ cần khi new_start/new_end KHÔNG kèm
+    offset. Bỏ trống thì rơi về DEFAULT_TIMEZONE như trước.
+    """
+    start_dt = parse_iso_datetime_flexible(new_start, timezone_name, ambiguous='earliest')
+    end_dt = parse_iso_datetime_flexible(new_end, timezone_name, ambiguous='latest')
     if not start_dt or not end_dt:
         raise ValueError(f"Invalid datetime format: start={new_start}, end={new_end}")
 

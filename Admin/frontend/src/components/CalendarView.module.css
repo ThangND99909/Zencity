@@ -1781,3 +1781,10 @@
     flex-basis: calc(50% - 10px);
   }
 }
+
+/* Nhắc rõ con số giờ ở popup đang theo múi giờ nào của người xem. */
+.timezoneHint {
+  color: #5f6368;
+  font-size: 0.85em;
+  white-space: nowrap;
+}

@@ -83,6 +83,23 @@ def _to_aware_utc(value, tz):
     return parsed.astimezone(dt_timezone.utc)
 
 
+def wall_clock_utc_range(naive, tz):
+    """Một giờ treo tường trong ``tz`` ứng với mốc UTC nào — trả ``(sớm nhất, muộn nhất)``.
+
+    Ngày thường hai giá trị BẰNG NHAU. Chỉ đúng hai mốc DST mới khác:
+      - Fall-back (Mỹ: CN đầu tháng 11): 01:30 xảy ra HAI lần, cách nhau 1 tiếng.
+      - Spring-forward (Mỹ: CN thứ 2 tháng 3): 02:30 KHÔNG tồn tại.
+
+    Khi đó trả về khoảng bao trùm mọi khả năng để việc dò trùng lịch fail-closed —
+    thà kiểm tra dư một tiếng còn hơn bỏ sót một xung đột thật.
+    """
+    candidates = {
+        tz.normalize(tz.localize(naive, is_dst=is_dst)).astimezone(dt_timezone.utc)
+        for is_dst in (True, False)
+    }
+    return min(candidates), max(candidates)
+
+
 def expand_occurrences(start, end, class_info, max_occurrences=MAX_OCCURRENCES):
     """Bung một sự kiện (kèm luật lặp) thành danh sách buổi thực tế theo UTC.
 
@@ -94,6 +111,15 @@ def expand_occurrences(start, end, class_info, max_occurrences=MAX_OCCURRENCES):
 
     Buổi gốc (DTSTART) LUÔN được đưa vào kết quả kể cả khi không khớp BYDAY. Thà kiểm
     tra dư một buổi còn hơn bỏ sót một xung đột thật.
+
+    FIX DST: luật lặp được bung theo GIỜ TREO TƯỜNG (naive) trong múi giờ của sự kiện,
+    rồi mới localize từng buổi về UTC — đúng ngữ nghĩa Google Calendar (RRULE + timeZone:
+    lớp 9h sáng vẫn là 9h sáng quanh năm, offset tự đổi -06:00 ↔ -05:00).
+
+    Trước đây dtstart được gán tzinfo có offset CỐ ĐỊNH tại ngày bắt đầu
+    (``start_utc.astimezone(tz)``); dateutil giữ nguyên tzinfo đó cho mọi buổi sau nên
+    toàn bộ chuỗi vắt qua mốc DST bị lệch đúng 1 tiếng so với sự kiện Google thật sự
+    tạo ra — vừa bỏ sót xung đột thật, vừa báo trùng giả.
     """
     tz = pytz.timezone(validate_recurrence_timezone(class_info.get('timezone')))
 
@@ -101,30 +127,44 @@ def expand_occurrences(start, end, class_info, max_occurrences=MAX_OCCURRENCES):
     end_utc = _to_aware_utc(end, tz)
     if end_utc <= start_utc:
         raise ValueError("Event end time must be later than its start time")
-    duration = end_utc - start_utc
 
     rule = build_recurrence_rule(class_info)
     if not rule:
         return [(start_utc, end_utc)], False
 
-    # dtstart phải ở múi giờ của sự kiện thì BYDAY/giờ trong ngày mới đúng ngữ nghĩa.
-    dtstart_local = start_utc.astimezone(tz)
+    # Giờ treo tường của buổi gốc trong múi giờ sự kiện — đây mới là thứ RRULE lặp lại.
+    start_wall = start_utc.astimezone(tz).replace(tzinfo=None)
+    end_wall = end_utc.astimezone(tz).replace(tzinfo=None)
+
+    # Độ dài tính theo giờ treo tường (lớp 9:00–10:00 vẫn là 9:00–10:00 sau khi đổi giờ).
+    # Buổi gốc nằm vắt qua đúng mốc fall-back có thể cho hiệu âm/0 — khi đó lùi về độ
+    # dài thật theo UTC để không bao giờ sinh ra buổi có end <= start.
+    wall_duration = end_wall - start_wall
+    if wall_duration.total_seconds() <= 0:
+        wall_duration = end_utc - start_utc
+
     try:
-        rule_set = rrulestr(rule[len("RRULE:"):], dtstart=dtstart_local)
+        rule_set = rrulestr(rule[len("RRULE:"):], dtstart=start_wall)
     except Exception as error:
         raise ValueError(f"Invalid recurrence rule '{rule}': {error}") from error
 
-    starts = []
+    # Buổi gốc luôn có mặt, và giữ đúng mốc UTC người dùng đã gửi lên.
+    spans = {start_utc: end_utc}
     truncated = False
     for index, occurrence in enumerate(rule_set):
         if index >= max_occurrences:
             truncated = True
             break
-        starts.append(occurrence.astimezone(dt_timezone.utc))
+        occurrence_start, _ = wall_clock_utc_range(occurrence, tz)
+        _, occurrence_end = wall_clock_utc_range(occurrence + wall_duration, tz)
+        # Trùng mốc bắt đầu thì giữ khoảng RỘNG hơn (fail-closed).
+        previous_end = spans.get(occurrence_start)
+        spans[occurrence_start] = (
+            max(previous_end, occurrence_end) if previous_end else occurrence_end
+        )
 
-    unique_starts = sorted({start_utc, *starts})
-    print(f"📆 Expanded {len(unique_starts)} occurrence(s) from {rule} (truncated={truncated})")
-    return [(moment, moment + duration) for moment in unique_starts], truncated
+    print(f"📆 Expanded {len(spans)} occurrence(s) from {rule} (truncated={truncated})")
+    return [(moment, spans[moment]) for moment in sorted(spans)], truncated
 
 
 def validate_recurrence_timezone(tz_str):

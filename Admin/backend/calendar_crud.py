@@ -392,73 +392,63 @@ def _delete_events_in_batches(calendar_id, event_ids):
     return len(deleted_ids)
 
 # ========== HÀM XÁC ĐỊNH CALENDAR ==========
-def determine_calendar_by_hour(start_datetime_str):
+def event_local_hour(start_datetime_str, timezone_name=None):
+    """Giờ (0-23) mà sự kiện HIỂN THỊ trong múi giờ của chính nó.
+
+    Giống Google Calendar: sự kiện mang theo `timeZone` của nó, và giờ của sự kiện là
+    giờ treo tường trong múi giờ đó. Mọi dạng input đều quy về cùng một giá trị:
+    naive '09:00' (giờ treo tường), '...T14:00:00Z', hay '...T09:00:00-05:00' — với
+    timezone 'America/Chicago' đều cho 9.
+
+    Trả về None nếu không parse được, để caller tự quyết cách xử lý.
     """
-    Xác định calendar dựa trên giờ bắt đầu (theo múi giờ Việt Nam)
-    """
+    # normalize_datetime_with_timezone chỉ làm việc với chuỗi; đưa datetime vào sẽ bị
+    # nuốt lỗi rồi trả nguyên vật cũ → ra giờ UTC thay vì giờ địa phương.
+    if isinstance(start_datetime_str, datetime):
+        start_datetime_str = start_datetime_str.isoformat()
+
+    tz_name = validate_timezone(timezone_name or 'Asia/Ho_Chi_Minh')
+    normalized = normalize_datetime_with_timezone(start_datetime_str, tz_name)
     try:
-        if not start_datetime_str:
-            print("⚠️ Empty datetime, using default calendar")
-            return CALENDARS['odd']  # Mặc định calendar lẻ
-        
-        print(f"🔍 determine_calendar_by_hour INPUT: {start_datetime_str}")
-        
-        # Parse datetime string
-        dt_str = start_datetime_str
-        
-        # Xử lý timezone: luôn convert về giờ Việt Nam
-        if dt_str.endswith('Z'):
-            # UTC time → convert to VN time
-            dt_utc = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-            vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
-            dt_vn = dt_utc.astimezone(vn_tz)
-            hour = dt_vn.hour
-            print(f"  ⚡ UTC → VN: {dt_utc.hour}:00 UTC → {dt_vn.hour}:00 VN")
-            
-        elif '+' in dt_str or dt_str.count('-') >= 3:
-            # Có timezone offset
-            try:
-                dt_with_tz = datetime.fromisoformat(dt_str)
-                # Convert to VN time
-                vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
-                dt_vn = dt_with_tz.astimezone(vn_tz)
-                hour = dt_vn.hour
-                print(f"  ⚡ With tz → VN: {hour}:00 VN")
-            except:
-                # Fallback: parse as naive and assume VN time
-                if 'T' in dt_str:
-                    naive_part = dt_str.split('+')[0].split('-')[0] if '+' in dt_str else dt_str.split('-')[0]
-                    naive_dt = datetime.fromisoformat(naive_part)
-                    hour = naive_dt.hour
-                    print(f"  ⚡ Fallback naive: {hour}:00 (assume VN)")
-                else:
-                    hour = 0
-        
-        else:
-            # Không có timezone → giả sử là giờ Việt Nam
-            dt_naive = datetime.fromisoformat(dt_str)
-            hour = dt_naive.hour
-            print(f"  ⚡ Naive datetime: {hour}:00 (assume VN)")
-        
-        # ⚠️ **QUAN TRỌNG: Sửa logic chẵn lẻ**
-        # 3 giờ là LẺ → Calendar LẺ
-        # Logic đúng: giờ lẻ (1, 3, 5, ...) → calendar ODD
-        #              giờ chẵn (0, 2, 4, ...) → calendar EVEN
-        
-        print(f"  🔢 Hour in VN: {hour}h → {'CHẴN' if hour % 2 == 0 else 'LẺ'}")
-        
-        if hour % 2 == 0:  # Giờ CHẴN (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22)
-            print(f"🎯 Decision: Calendar EVEN")
-            return CALENDARS['even']
-        else:  # Giờ LẺ (1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23)
-            print(f"🎯 Decision: Calendar ODD")
-            return CALENDARS['odd']
-            
-    except Exception as e:
-        print(f"❌ Error determining calendar by hour: {e}")
-        print(f"📝 Raw datetime string: {start_datetime_str}")
-        return CALENDARS['odd']  # Default to ODD calendar
-    
+        return datetime.fromisoformat(str(normalized).replace('Z', '+00:00')).hour
+    except (TypeError, ValueError) as error:
+        print(f"❌ Không đọc được giờ từ '{start_datetime_str}': {error}")
+        return None
+
+
+def determine_calendar_by_hour(start_datetime_str, timezone_name=None):
+    """Chọn calendar CHẴN/LẺ theo GIỜ ĐỊA PHƯƠNG của chính sự kiện.
+
+    ⚠️ Trước đây hàm luôn quy về giờ Việt Nam. Với lớp ở Mỹ, giờ VN xê dịch 1 tiếng
+    mỗi lần Mỹ đổi giờ (9:00 Chicago = 21:00 VN mùa hè nhưng 22:00 VN mùa đông), nên
+    tính chẵn/lẻ của CÙNG một lớp lật qua lật lại theo mùa:
+      - Google lưu cả chuỗi lặp trong MỘT calendar, nên nửa chuỗi sau mốc DST nằm sai
+        nhãn → bộ lọc "Calendar Chẵn/Lẻ" ở sidebar hiển thị sai lớp;
+      - khi sửa sự kiện, hàm tính ra calendar khác chỗ đang nằm → kích hoạt move
+        calendar vô cớ (với chuỗi lặp là insert lại + EXDATE, rất rủi ro).
+
+    Giờ địa phương thì bất biến qua DST, nên quy ước chẵn/lẻ luôn thoả mãn được và
+    mọi buổi trong chuỗi đều cùng một calendar.
+
+    Không truyền `timezone_name` → vẫn mặc định Asia/Ho_Chi_Minh như trước.
+    """
+    if not start_datetime_str or not str(start_datetime_str).strip():
+        print("⚠️ Empty datetime, using default calendar")
+        return CALENDARS['odd']
+
+    hour = event_local_hour(start_datetime_str, timezone_name)
+    if hour is None:
+        print("⚠️ Không xác định được giờ → mặc định calendar LẺ")
+        return CALENDARS['odd']
+
+    if hour % 2 == 0:
+        print(f"🎯 Giờ địa phương {hour}h → CHẴN → Calendar EVEN")
+        return CALENDARS['even']
+
+    print(f"🎯 Giờ địa phương {hour}h → LẺ → Calendar ODD")
+    return CALENDARS['odd']
+
+
 def get_calendar_type_by_id(calendar_id):
     """Lấy loại calendar từ calendar_id"""
     if calendar_id == CALENDARS['odd']:
@@ -979,19 +969,10 @@ def create_event(class_info, idempotency_key=None):
         start_iso = normalize_datetime_with_timezone(class_info['start'], timezone)
         end_iso = normalize_datetime_with_timezone(class_info['end'], timezone)
 
-        # 3️⃣ CHUYỂN START SANG GIỜ VN để xác định calendar chẵn/lẻ
-        dt_start = datetime.fromisoformat(start_iso.replace('Z', '+00:00'))
-        dt_vn = dt_start.astimezone(pytz.timezone('Asia/Ho_Chi_Minh'))
-        hour_vn = dt_vn.hour
-        print(f"🌏 Start time in VN: {dt_vn.strftime('%Y-%m-%d %H:%M')} → Hour: {hour_vn}")
-
-        # 4️⃣ CHỌN CALENDAR DỰA TRÊN GIỜ VN
-        if hour_vn % 2 == 0:
-            calendar_id = CALENDARS['even']
-            print(f"🎯 Selected calendar: EVEN")
-        else:
-            calendar_id = CALENDARS['odd']
-            print(f"🎯 Selected calendar: ODD")
+        # 3️⃣ CHỌN CALENDAR CHẴN/LẺ THEO GIỜ ĐỊA PHƯƠNG CỦA SỰ KIỆN
+        #    (giờ hiển thị trong múi giờ người dùng chọn — bất biến qua mốc đổi giờ,
+        #     nên mọi buổi của chuỗi lặp đều nằm cùng một calendar)
+        calendar_id = determine_calendar_by_hour(start_iso, timezone)
 
         # 5️⃣ TẠO DESCRIPTION
         description = build_event_description(class_info)
@@ -1328,7 +1309,10 @@ def update_event(event_id, class_info):
 
         if new_start_time and new_start_time.strip():  # Thêm check không rỗng
             try:
-                new_calendar_id = determine_calendar_by_hour(new_start_time)
+                # Múi giờ của sự kiện quyết định giờ chẵn/lẻ, không phải giờ VN.
+                new_calendar_id = determine_calendar_by_hour(
+                    new_start_time, class_info.get('timezone')
+                )
                 print(f"🔄 New hour analysis:")
                 print(f"   - New start: {new_start_time}")
                 print(f"   - Calendar: {'EVEN' if new_calendar_id == CALENDARS['even'] else 'ODD'}")
@@ -1631,7 +1615,7 @@ def update_following_events(
         # 7️⃣ Tự động move master mới sang calendar chẵn/lẻ nếu cần
         # ==========================================================
         try:
-            new_calendar_id = determine_calendar_by_hour(start_iso)
+            new_calendar_id = determine_calendar_by_hour(start_iso, timezone)
             if new_calendar_id != calendar_id:
                 print(f"🎯 FOLLOWING MODE: Hour changed → moving new master to new calendar")
                 calendar_service.events().move(

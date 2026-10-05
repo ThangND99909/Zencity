@@ -2,6 +2,11 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import styles from "./ClassTable.module.css";
 import { parseZoomInfo } from "../utils/sanitizeDescription";
+import {
+  formatInZone,
+  getEventInstant,
+  getEventTimezone,
+} from "../utils/eventTime";
 import { getPrograms } from "../services/api";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
@@ -419,6 +424,7 @@ export default function ClassTable({ classes, onDelete, calendarFilter }) {
 
     const data = filteredClasses.map((cls) => {
       const info = getInfo(cls);
+      const eventTimezone = getEventTimezone(cls);
 
       let recurrenceInfo = "";
       if (cls._isRecurringGroup) {
@@ -440,10 +446,19 @@ export default function ClassTable({ classes, onDelete, calendarFilter }) {
         "Zoom Link": info.zoom_link,
         "Meeting ID": info.meeting_id,
         "Passcode": info.passcode,
-        "Start Time": new Date(cls.start?.dateTime || cls.start).toLocaleString("vi-VN"),
-        "End Time": new Date(cls.end?.dateTime || cls.end).toLocaleString("vi-VN"),
+        // ⚠️ Hai cột giờ này phải khớp với cột "Timezone" ngay bên dưới. Trước đây
+        // chúng dùng new Date(...).toLocaleString() — tức giờ TRÌNH DUYỆT của người
+        // bấm xuất file — trong khi cột Timezone lại ghi múi giờ của SỰ KIỆN. Admin ở
+        // VN xuất lớp Chicago sẽ ra "21:00" nằm cạnh "America/Chicago", ai đọc file
+        // cũng hiểu thành 21:00 giờ Chicago. File còn được gửi đi nên sai rất khó lần.
+        "Start Time": formatInZone(
+          getEventInstant(cls.start), eventTimezone, "DD/MM/YYYY HH:mm"
+        ),
+        "End Time": formatInZone(
+          getEventInstant(cls.end), eventTimezone, "DD/MM/YYYY HH:mm"
+        ),
         "Recurrence": recurrenceInfo,
-        "Timezone": cls.start?.timeZone || cls.end?.timeZone || "Asia/Ho_Chi_Minh",
+        "Timezone": eventTimezone,
         "Event ID": cls.id || "",
         "Calendar Source": info.calendar_source
       };
