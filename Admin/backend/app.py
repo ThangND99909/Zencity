@@ -123,7 +123,9 @@ class ClassInfo(BaseModel):
     meeting_id: str = ""
     passcode: str = ""
     recurrence: Optional[str] = ""       # Loại lặp: DAILY, WEEKLY, MONTHLY, YEARLY
-    repeat_count: int = 1                # Số lần lặp
+    # Số lần lặp. ge=1: repeat_count=0 làm build_recurrence_rule bỏ COUNT → chuỗi lặp
+    # vô hạn, không tách được tại mốc đổi giờ nên sẽ nằm sai calendar sau mốc đó.
+    repeat_count: int = Field(default=1, ge=1)
     week_count: Optional[int] = None     # Số tuần lặp (chỉ cho WEEKLY) - THÊM
     month_count: Optional[int] = None    # Số tháng lặp (chỉ cho MONTHLY) - THÊM
     year_count: Optional[int] = None 

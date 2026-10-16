@@ -6,7 +6,15 @@ import socket
 import ssl
 import uuid
 from pathlib import Path
-from recurrence_helper import build_recurrence_rule
+from recurrence_helper import build_recurrence_rule, wall_clock_utc_range
+from calendar_parity import (
+    PARITY_TIMEZONE,
+    has_rrule,
+    parity_of,
+    plan_series_segments,
+    segment_recurrence,
+    to_utc,
+)
 from datetime import datetime, timedelta, timezone
 import pytz
 import time
@@ -77,6 +85,12 @@ def _get_event_for_idempotency(calendar_id, event_id):
 
 
 def _validate_idempotent_event(existing_event, payload_hash):
+    # Google giữ id của sự kiện đã xóa (status 'cancelled'): tạo lại cùng id sẽ trả 409
+    # và GET trả về bản đã hủy. Coi đó là thành công thì buổi học mất mà không ai biết.
+    if existing_event.get('status') == 'cancelled':
+        raise IdempotencyConflictError(
+            "The event for this idempotency key was deleted; retry with a new request"
+        )
     private = existing_event.get('extendedProperties', {}).get('private', {})
     existing_hash = private.get('zencityPayloadHash')
     if existing_hash != payload_hash:
@@ -392,61 +406,29 @@ def _delete_events_in_batches(calendar_id, event_ids):
     return len(deleted_ids)
 
 # ========== HÀM XÁC ĐỊNH CALENDAR ==========
-def event_local_hour(start_datetime_str, timezone_name=None):
-    """Giờ (0-23) mà sự kiện HIỂN THỊ trong múi giờ của chính nó.
-
-    Giống Google Calendar: sự kiện mang theo `timeZone` của nó, và giờ của sự kiện là
-    giờ treo tường trong múi giờ đó. Mọi dạng input đều quy về cùng một giá trị:
-    naive '09:00' (giờ treo tường), '...T14:00:00Z', hay '...T09:00:00-05:00' — với
-    timezone 'America/Chicago' đều cho 9.
-
-    Trả về None nếu không parse được, để caller tự quyết cách xử lý.
-    """
-    # normalize_datetime_with_timezone chỉ làm việc với chuỗi; đưa datetime vào sẽ bị
-    # nuốt lỗi rồi trả nguyên vật cũ → ra giờ UTC thay vì giờ địa phương.
-    if isinstance(start_datetime_str, datetime):
-        start_datetime_str = start_datetime_str.isoformat()
-
-    tz_name = validate_timezone(timezone_name or 'Asia/Ho_Chi_Minh')
-    normalized = normalize_datetime_with_timezone(start_datetime_str, tz_name)
-    try:
-        return datetime.fromisoformat(str(normalized).replace('Z', '+00:00')).hour
-    except (TypeError, ValueError) as error:
-        print(f"❌ Không đọc được giờ từ '{start_datetime_str}': {error}")
-        return None
-
-
 def determine_calendar_by_hour(start_datetime_str, timezone_name=None):
-    """Chọn calendar CHẴN/LẺ theo GIỜ ĐỊA PHƯƠNG của chính sự kiện.
+    """Chọn calendar CHẴN/LẺ theo GIỜ VIỆT NAM của thời điểm bắt đầu (yêu cầu khách hàng).
 
-    ⚠️ Trước đây hàm luôn quy về giờ Việt Nam. Với lớp ở Mỹ, giờ VN xê dịch 1 tiếng
-    mỗi lần Mỹ đổi giờ (9:00 Chicago = 21:00 VN mùa hè nhưng 22:00 VN mùa đông), nên
-    tính chẵn/lẻ của CÙNG một lớp lật qua lật lại theo mùa:
-      - Google lưu cả chuỗi lặp trong MỘT calendar, nên nửa chuỗi sau mốc DST nằm sai
-        nhãn → bộ lọc "Calendar Chẵn/Lẻ" ở sidebar hiển thị sai lớp;
-      - khi sửa sự kiện, hàm tính ra calendar khác chỗ đang nằm → kích hoạt move
-        calendar vô cớ (với chuỗi lặp là insert lại + EXDATE, rất rủi ro).
+    `timezone_name` chỉ dùng để hiểu chuỗi không có offset (giờ treo tường của form);
+    chẵn/lẻ luôn tính theo giờ VN. Vì vậy cùng một lớp 20:00 Chicago nằm ở EVEN khi Mỹ
+    dùng giờ mùa hè (08:00 VN) và ở ODD sau mốc đổi giờ (09:00 VN). Chuỗi lặp vắt qua
+    mốc đổi giờ được tách đoạn bởi `_insert_series`, không phải ở hàm này.
 
-    Giờ địa phương thì bất biến qua DST, nên quy ước chẵn/lẻ luôn thoả mãn được và
-    mọi buổi trong chuỗi đều cùng một calendar.
-
-    Không truyền `timezone_name` → vẫn mặc định Asia/Ho_Chi_Minh như trước.
+    Đầu vào hỏng → calendar LẺ, giữ nguyên hành vi mặc định cũ.
     """
     if not start_datetime_str or not str(start_datetime_str).strip():
         print("⚠️ Empty datetime, using default calendar")
         return CALENDARS['odd']
 
-    hour = event_local_hour(start_datetime_str, timezone_name)
-    if hour is None:
-        print("⚠️ Không xác định được giờ → mặc định calendar LẺ")
+    try:
+        moment = to_utc(start_datetime_str, validate_timezone(timezone_name or 'Asia/Ho_Chi_Minh'))
+    except (TypeError, ValueError) as error:
+        print(f"⚠️ Không đọc được giờ từ '{start_datetime_str}' ({error}) → mặc định calendar LẺ")
         return CALENDARS['odd']
 
-    if hour % 2 == 0:
-        print(f"🎯 Giờ địa phương {hour}h → CHẴN → Calendar EVEN")
-        return CALENDARS['even']
-
-    print(f"🎯 Giờ địa phương {hour}h → LẺ → Calendar ODD")
-    return CALENDARS['odd']
+    parity = parity_of(moment)
+    print(f"🎯 Giờ VN {moment.astimezone(PARITY_TIMEZONE).hour}h → Calendar {parity.upper()}")
+    return CALENDARS[parity]
 
 
 def get_calendar_type_by_id(calendar_id):
@@ -947,14 +929,194 @@ def get_event(event_id):
         print(f"❌ Unexpected error in get_event: {e}")
         raise
 
+# ----------------- SERIES SEGMENTS -----------------
+# Một chuỗi lặp vắt qua mốc đổi giờ được lưu thành nhiều đoạn (mỗi đoạn một calendar).
+# Các đoạn cùng chuỗi mang chung SERIES_ID_PROPERTY để sửa/xóa "following"/"all" xử lý
+# được cả những đoạn nằm ở calendar kia.
+SERIES_ID_PROPERTY = 'zencitySeriesId'
+SEGMENT_PROPERTY = 'zencitySegment'
+
+
+def _series_id_of(event):
+    return (((event or {}).get('extendedProperties') or {}).get('private') or {}).get(SERIES_ID_PROPERTY)
+
+
+def _new_series_id(idempotency_key=None):
+    """Mã chuỗi; suy ra từ idempotency key để request thử lại sinh đúng payload cũ."""
+    if idempotency_key:
+        return hashlib.sha256(f"series:{idempotency_key}".encode('utf-8')).hexdigest()[:24]
+    return uuid.uuid4().hex[:24]
+
+
+def _with_private_properties(event, **properties):
+    body = dict(event)
+    extended = dict(body.get('extendedProperties') or {})
+    extended['private'] = {**(extended.get('private') or {}), **properties}
+    body['extendedProperties'] = extended
+    return body
+
+
+def _plan_event_bodies(event, timezone_name, series_id):
+    """Trả về [(calendar_id, body)] — một phần tử, hoặc nhiều nếu chuỗi phải tách đoạn.
+
+    Sự kiện đơn và chuỗi không vắt qua mốc đổi giờ giữ NGUYÊN luật lặp gốc; chỉ khi
+    giờ VN đổi chẵn/lẻ giữa chừng mới tách thành các đoạn kết thúc bằng UNTIL.
+    """
+    start_utc = to_utc(event['start']['dateTime'], timezone_name)
+    recurrence = event.get('recurrence') or []
+    if not has_rrule(recurrence):
+        return [(CALENDARS[parity_of(start_utc)], event)]
+
+    segments = plan_series_segments(start_utc, timezone_name, recurrence)
+    if len(segments) == 1:
+        body = _with_private_properties(event, **{SERIES_ID_PROPERTY: series_id})
+        return [(CALENDARS[segments[0].parity], body)]
+
+    tz = pytz.timezone(timezone_name)
+    end_utc = to_utc(event['end']['dateTime'], timezone_name)
+    wall_duration = (
+        end_utc.astimezone(tz).replace(tzinfo=None) - start_utc.astimezone(tz).replace(tzinfo=None)
+    )
+    if wall_duration.total_seconds() <= 0:
+        wall_duration = end_utc - start_utc
+
+    planned = []
+    for index, segment in enumerate(segments, start=1):
+        start_wall = segment.first.astimezone(tz).replace(tzinfo=None)
+        segment_end = wall_clock_utc_range(start_wall + wall_duration, tz)[1]
+        body = dict(event)
+        body['start'] = {'dateTime': segment.first.astimezone(tz).isoformat(), 'timeZone': timezone_name}
+        body['end'] = {'dateTime': segment_end.astimezone(tz).isoformat(), 'timeZone': timezone_name}
+        body['recurrence'] = segment_recurrence(recurrence, segment)
+        body = _with_private_properties(body, **{
+            SERIES_ID_PROPERTY: series_id,
+            SEGMENT_PROPERTY: f"{index}/{len(segments)}",
+        })
+        planned.append((CALENDARS[segment.parity], body))
+    return planned
+
+
+def _insert_series(event, timezone_name, insert, series_id=None):
+    """Tạo sự kiện (có thể nhiều đoạn), mỗi đoạn đúng calendar theo giờ VN.
+
+    `insert(calendar_id, body, index)` thực hiện lệnh tạo. Lỗi giữa chừng → gỡ các
+    đoạn đã tạo rồi raise, để không bao giờ để lại một chuỗi bị khuyết đoạn.
+    Trả về [(calendar_id, result)] theo thứ tự thời gian.
+    """
+    planned = _plan_event_bodies(event, timezone_name, series_id or _new_series_id())
+    if len(planned) > 1:
+        print(f"✂️ Chuỗi vắt qua mốc đổi giờ → tách {len(planned)} đoạn: "
+              + ", ".join(get_calendar_type_by_id(cid).upper() for cid, _ in planned))
+
+    created = []
+    try:
+        for index, (calendar_id, body) in enumerate(planned):
+            created.append((calendar_id, insert(calendar_id, body, index)))
+    except Exception:
+        _discard_created(created)
+        raise
+    return created
+
+
+def _discard_created(created):
+    """Gỡ các đoạn vừa tạo khi thao tác không thể hoàn tất (best-effort, giữ lỗi gốc)."""
+    for calendar_id, result in created:
+        try:
+            calendar_service.events().delete(
+                calendarId=calendar_id, eventId=result.get('id')
+            ).execute(http=_wr_http())
+        except Exception as cleanup_error:  # noqa: BLE001 - báo rõ, không che lỗi gốc
+            print(f"⚠️ Không gỡ được đoạn đã tạo {result.get('id')}: {cleanup_error}")
+
+
+def _segment_summary(created):
+    return [
+        {
+            'id': result.get('id'),
+            'calendar': get_calendar_type_by_id(calendar_id),
+            'start': (result.get('start') or {}).get('dateTime'),
+        }
+        for calendar_id, result in created
+    ]
+
+
+def _list_series_masters(series_id):
+    """Mọi master (đoạn) của một chuỗi trên cả hai calendar: [(calendar_id, event)]."""
+    masters = []
+    for calendar_id in (CALENDARS['odd'], CALENDARS['even']):
+        page_token = None
+        while True:
+            params = {
+                'calendarId': calendar_id,
+                'privateExtendedProperty': f"{SERIES_ID_PROPERTY}={series_id}",
+                'singleEvents': False,
+                'showDeleted': False,
+                'maxResults': 2500,
+            }
+            if page_token:
+                params['pageToken'] = page_token
+            response = calendar_service.events().list(**params).execute(http=_wr_http())
+            masters.extend(
+                (calendar_id, item) for item in response.get('items', [])
+                if item.get('recurrence') and item.get('status') != 'cancelled'
+            )
+            page_token = response.get('nextPageToken')
+            if not page_token:
+                break
+    return masters
+
+
+def _series_id_for(calendar_id, master_event_id, current_event=None):
+    """Mã chuỗi của master; đọc từ event hiện có trước, chỉ GET master khi cần."""
+    series_id = _series_id_of(current_event)
+    if series_id or not master_event_id:
+        return series_id
+    try:
+        master = calendar_service.events().get(
+            calendarId=calendar_id, eventId=master_event_id
+        ).execute(http=_wr_http())
+    except HttpError as error:
+        if getattr(error.resp, 'status', None) in (404, 410):
+            return None
+        raise
+    return _series_id_of(master)
+
+
+def _delete_later_segments(series_id, exclude_master_id, from_utc):
+    """Xóa các đoạn cùng chuỗi bắt đầu từ `from_utc` trở đi (trừ master đang xử lý)."""
+    deleted = []
+    if not series_id:
+        return deleted
+    for calendar_id, master in _list_series_masters(series_id):
+        if master.get('id') == exclude_master_id:
+            continue
+        first = _occurrence_start_utc(master)
+        if first is None or first < from_utc:
+            continue
+        try:
+            calendar_service.events().delete(
+                calendarId=calendar_id, eventId=master['id']
+            ).execute(http=_wr_http())
+        except HttpError as error:
+            if getattr(error.resp, 'status', None) not in (404, 410):
+                raise
+        remove_extra(master['id'])
+        deleted.append(master['id'])
+    if deleted:
+        print(f"🧹 Đã xóa {len(deleted)} đoạn sau của chuỗi {series_id}")
+    return deleted
+
+
 # ----------------- CREATE -----------------
 def create_event(class_info, idempotency_key=None):
     """
     Tạo event với đầy đủ hỗ trợ:
     - Recurrence (lặp lại)
-    - Calendar chẵn/lẻ tự động dựa trên giờ VN sau convert
+    - Calendar chẵn/lẻ theo giờ VN của từng buổi; chuỗi vắt qua mốc đổi giờ được
+      tách thành nhiều đoạn, mỗi đoạn ở đúng calendar
     - Giữ giờ gốc cho grid view
-    - Tự động move calendar khi đổi timezone
+
+    Trả về kết quả của đoạn đầu tiên; khi có tách đoạn, `_segments` liệt kê mọi đoạn.
     """
     try:
         print(f"🎯 ========== CREATE EVENT ==========")
@@ -969,43 +1131,44 @@ def create_event(class_info, idempotency_key=None):
         start_iso = normalize_datetime_with_timezone(class_info['start'], timezone)
         end_iso = normalize_datetime_with_timezone(class_info['end'], timezone)
 
-        # 3️⃣ CHỌN CALENDAR CHẴN/LẺ THEO GIỜ ĐỊA PHƯƠNG CỦA SỰ KIỆN
-        #    (giờ hiển thị trong múi giờ người dùng chọn — bất biến qua mốc đổi giờ,
-        #     nên mọi buổi của chuỗi lặp đều nằm cùng một calendar)
-        calendar_id = determine_calendar_by_hour(start_iso, timezone)
-
-        # 5️⃣ TẠO DESCRIPTION
-        description = build_event_description(class_info)
-
-        # 6️⃣ TẠO EVENT OBJECT
+        # 3️⃣ TẠO EVENT OBJECT
         event = {
             'summary': class_info['name'],
-            'description': description,
+            'description': build_event_description(class_info),
             'location': class_info.get('zoom_link', ''),
             'start': {'dateTime': start_iso, 'timeZone': timezone},
             'end': {'dateTime': end_iso, 'timeZone': timezone},
-            'recurrence': class_info.get('rrule', [])
+            'recurrence': class_info.get('rrule') or []
         }
 
-        # 7️⃣ GỬI LÊN GOOGLE CALENDAR (idempotent across retries/double-clicks)
-        result = _insert_event_idempotently(
-            calendar_id,
-            event,
-            idempotency_key=idempotency_key
-        )
-        event_id = result.get('id')
+        # 4️⃣ GỬI LÊN GOOGLE CALENDAR — calendar chẵn/lẻ theo giờ VN, tách đoạn nếu
+        #    chuỗi vắt qua mốc đổi giờ. Mỗi đoạn có key riêng suy từ key gốc nên vẫn
+        #    idempotent khi client gửi lại (đoạn đầu dùng đúng key gốc như trước).
+        def insert(calendar_id, body, index):
+            key = idempotency_key if index == 0 or not idempotency_key else f"{idempotency_key}#segment-{index + 1}"
+            return _insert_event_idempotently(calendar_id, body, idempotency_key=key)
 
-        # 8️⃣ LƯU EXTRA DATA
-        add_extra(
-            event_id,
-            class_info.get('meeting_id', ''),
-            class_info.get('passcode', ''),
-            class_info.get('zoom_link', ''),
-            class_info.get('classname', ''),
-            calendar_id
+        created = _insert_series(
+            event, timezone, insert, series_id=_new_series_id(idempotency_key)
         )
 
-        print(f"✅ Event created in {'EVEN' if calendar_id == CALENDARS['even'] else 'ODD'} calendar")
+        # 5️⃣ LƯU EXTRA DATA cho từng đoạn
+        for calendar_id, segment_result in created:
+            add_extra(
+                segment_result.get('id'),
+                class_info.get('meeting_id', ''),
+                class_info.get('passcode', ''),
+                class_info.get('zoom_link', ''),
+                class_info.get('classname', ''),
+                calendar_id
+            )
+
+        result = created[0][1]
+        if len(created) > 1:
+            result = {**result, '_segments': _segment_summary(created)}
+        print("✅ Event created in " + ", ".join(
+            get_calendar_type_by_id(calendar_id).upper() for calendar_id, _ in created
+        ) + " calendar")
 
         return result
 
@@ -1492,7 +1655,8 @@ def update_following_events(
        - Dừng master tại instance này (bằng UNTIL).
        - Tạo chuỗi mới bắt đầu từ instance hiện tại.
        - Giữ nguyên giờ local, đổi UTC offset nếu đổi timezone.
-       - Tự động move sang calendar chẵn/lẻ nếu cần.
+       - Chuỗi mới vào đúng calendar chẵn/lẻ theo giờ VN, tách đoạn tại mốc đổi giờ;
+         các đoạn sau của chuỗi cũ (nếu có) cũng được gỡ.
     """
     try:
         import re
@@ -1538,17 +1702,7 @@ def update_following_events(
         if not instance_start or not master_start:
             raise ValueError("⚠️ Missing start time")
 
-        # 4️⃣ Dừng chuỗi cũ tại instance
-        print(f"🧩 Stopping old series at {instance_start}")
-        updated_master = stop_recurrence_at_instance(master, instance_start)
-        calendar_service.events().update(
-            calendarId=calendar_id,
-            eventId=master_event_id,
-            body=updated_master,
-        ).execute(http=_wr_http())
-        print("✅ Old series updated (stopped before instance)")
-
-        # 5️⃣ Tạo chuỗi mới bắt đầu từ instance này
+        # 4️⃣ Dựng chuỗi mới bắt đầu từ instance này
         # Frontend datetime-local values intentionally have no UTC offset. Treat
         # those values as wall-clock time in the selected timezone; calling
         # astimezone() directly on a naive datetime makes Python assume the
@@ -1581,15 +1735,34 @@ def update_following_events(
             "recurrence": new_rrule,
         }
 
+        # 5️⃣ TẠO chuỗi mới TRƯỚC — mỗi đoạn vào đúng calendar theo giờ VN, tự tách
+        #    đoạn nếu vắt qua mốc đổi giờ. Lỗi ở bước này thì chuỗi cũ còn nguyên.
         print(f"🆕 Creating new series from instance {instance_start}")
-        result = calendar_service.events().insert(
-            calendarId=calendar_id, body=new_event, sendUpdates="all"
-        ).execute(http=_wr_http())
+        created = _insert_series(
+            new_event,
+            timezone,
+            lambda target_calendar, body, _index: calendar_service.events().insert(
+                calendarId=target_calendar, body=body, sendUpdates="all"
+            ).execute(http=_wr_http()),
+        )
+        print(f"✅ Created new following series: {[r.get('id') for _, r in created]}")
 
-        new_event_id = result.get("id")
-        print(f"✅ Created new master for following series: {new_event_id}")
+        # 6️⃣ Chỉ khi chuỗi mới đã có mới dừng chuỗi cũ tại instance (UNTIL). Lỗi → gỡ
+        #    chuỗi mới rồi raise, để client thử lại không sinh ra bản trùng.
+        print(f"🧩 Stopping old series at {instance_start}")
+        try:
+            updated_master = stop_recurrence_at_instance(master, instance_start)
+            calendar_service.events().update(
+                calendarId=calendar_id,
+                eventId=master_event_id,
+                body=updated_master,
+            ).execute(http=_wr_http())
+        except Exception:
+            _discard_created(created)
+            raise
+        print("✅ Old series updated (stopped before instance)")
 
-        # 6️⃣ Xóa instance cũ vì đã tách ra thành chuỗi mới
+        # 7️⃣ Xóa instance cũ vì đã tách ra thành chuỗi mới
         try:
             print(f"🗑️ Deleting old instance {instance_id} (now part of new series)")
             calendar_service.events().delete(
@@ -1601,33 +1774,31 @@ def update_following_events(
         except Exception as e:
             print(f"⚠️ Could not delete old instance {instance_id}: {e}")
 
-        # 6️⃣ Cập nhật extra data
-        update_extra(
-            new_event_id,
-            class_info.get("meeting_id", ""),
-            class_info.get("passcode", ""),
-            class_info.get("zoom_link", ""),
-            class_info.get("classname", ""),
-            calendar_id,
-        )
-
-        # ==========================================================
-        # 7️⃣ Tự động move master mới sang calendar chẵn/lẻ nếu cần
-        # ==========================================================
+        # 8️⃣ Chuỗi cũ có thể có đoạn sau nằm ở calendar kia (tách tại mốc đổi giờ) —
+        #    các đoạn đó thuộc phần "following" nên cũng phải gỡ, nếu không sẽ trùng lịch.
+        result = {**created[0][1]}
         try:
-            new_calendar_id = determine_calendar_by_hour(start_iso, timezone)
-            if new_calendar_id != calendar_id:
-                print(f"🎯 FOLLOWING MODE: Hour changed → moving new master to new calendar")
-                calendar_service.events().move(
-                    calendarId=calendar_id,
-                    eventId=new_event_id,
-                    destination=new_calendar_id,
-                ).execute(http=_wr_http())
-                print(f"✅ New master moved to new calendar: {new_calendar_id}")
-                calendar_id = new_calendar_id
+            old_series_id = _series_id_for(calendar_id, master_event_id, master)
+            from_utc = datetime.fromisoformat(instance_start.replace("Z", "+00:00")).astimezone(pytz.utc)
+            _delete_later_segments(old_series_id, master_event_id, from_utc)
         except Exception as e:
-            print(f"⚠️ Could not move new master event to new calendar: {e}")
+            # Chuỗi mới đã tạo xong nên không raise (client thử lại sẽ sinh bản trùng).
+            print(f"⚠️ Chưa gỡ được các đoạn sau của chuỗi cũ: {e}")
+            result['_detach_warning'] = str(e)
 
+        # 9️⃣ Cập nhật extra data
+        for target_calendar, segment_result in created:
+            update_extra(
+                segment_result.get("id"),
+                class_info.get("meeting_id", ""),
+                class_info.get("passcode", ""),
+                class_info.get("zoom_link", ""),
+                class_info.get("classname", ""),
+                target_calendar,
+            )
+
+        if len(created) > 1:
+            result['_segments'] = _segment_summary(created)
         print("🎉 FOLLOWING MODE completed successfully!")
         return result
 
@@ -1830,27 +2001,30 @@ def delete_event(event_id, delete_mode="this"):
         # ==========================================================
         if delete_mode == "all" and master_event_id:
             print(f"🗑️ Delete mode 'all': removing entire series for master {master_event_id}")
+            # Đọc mã chuỗi TRƯỚC khi xóa master (xóa rồi thì không đọc được nữa).
+            series_id = _series_id_for(current_calendar_id, master_event_id, current_event)
             try:
                 calendar_service.events().delete(
                     calendarId=current_calendar_id,
                     eventId=master_event_id
                 ).execute(http=_wr_http())
+                status = "deleted"
                 print(f"✅ Deleted master series from {deleted_from}")
-                remove_extra(master_event_id)
-                remove_extra(event_id)
-                return {"status": "deleted", "delete_mode": "all", "from_calendar": deleted_from}
-
             except HttpError as e:
-                if e.resp.status in (404, 410):
-                    print("ℹ️ Master series already gone → xóa coi như đã hoàn tất")
-                    remove_extras([master_event_id, event_id])
-                    return {
-                        "status": "already_deleted",
-                        "delete_mode": "all",
-                        "from_calendar": deleted_from
-                    }
-                else:
+                if e.resp.status not in (404, 410):
                     raise
+                status = "already_deleted"
+                print("ℹ️ Master series already gone → xóa coi như đã hoàn tất")
+            remove_extras([master_event_id, event_id])
+
+            # Các đoạn khác của cùng chuỗi (tách tại mốc đổi giờ, có thể ở calendar kia).
+            other_segments = _delete_later_segments(
+                series_id, master_event_id, datetime.min.replace(tzinfo=timezone.utc)
+            )
+            if other_segments:
+                status = "deleted"
+            return {"status": status, "delete_mode": "all", "from_calendar": deleted_from,
+                    "deleted_segments": len(other_segments)}
 
         # ==========================================================
         # MODE: FOLLOWING — Xóa event này và toàn bộ event sau đó
@@ -1886,12 +2060,19 @@ def delete_event(event_id, delete_mode="this"):
                     current_calendar_id,
                     instance_ids
                 )
+                # Các đoạn sau của cùng chuỗi cũng thuộc phần "following".
+                later_segments = _delete_later_segments(
+                    _series_id_for(current_calendar_id, master_event_id, current_event),
+                    master_event_id,
+                    target_dt,
+                )
 
                 print(f"✅ Deleted {deleted_count} instances (following mode)")
                 return {
                     "status": "deleted",
                     "delete_mode": "following",
                     "deleted_count": deleted_count,
+                    "deleted_segments": len(later_segments),
                     "from_calendar": deleted_from
                 }
 

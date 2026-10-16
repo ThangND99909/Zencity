@@ -5,13 +5,17 @@ Mô phỏng đúng những hành vi mà code phụ thuộc vào:
   - chuỗi lặp sinh ra instance với id '<master>_<YYYYMMDDTHHMMSSZ>' như Google;
   - EXDATE loại bỏ occurrence khỏi chuỗi;
   - xóa lần hai trả về 410 Gone (chứ không phải 404);
-  - events().move() giữ nguyên id.
+  - events().move() giữ nguyên id;
+  - luật lặp chạy theo GIỜ TREO TƯỜNG trong timeZone của sự kiện, UNTIL bao gồm buổi
+    trùng mốc, DTSTART luôn là một buổi (đã kiểm chứng trên Google Calendar thật);
+  - instance mang theo extendedProperties; list() lọc được privateExtendedProperty.
 """
 import importlib.util
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from dateutil.rrule import rrulestr
 from googleapiclient.errors import HttpError
@@ -193,37 +197,69 @@ class FakeCalendarService:
     def list(self, calendar_id, **kwargs):
         events = self.store.get(calendar_id, {})
         single = kwargs.get("singleEvents", False)
+        private_filter = kwargs.get("privateExtendedProperty")
         items = []
         for value in events.values():
             if single and value.get("recurrence"):
                 continue  # singleEvents=True ⇒ Google trả instance thay cho master
+            if not single and value.get("recurringEventId"):
+                continue  # singleEvents=False ⇒ Google trả master, không bung instance
+            if private_filter:
+                key, _, expected = private_filter.partition("=")
+                private = (value.get("extendedProperties") or {}).get("private") or {}
+                if private.get(key) != expected:
+                    continue
             items.append(dict(value))
         return {"items": items, "nextSyncToken": "sync-token"}
 
     # ---------------- recurrence ----------------
-    def _materialize(self, calendar_id, master):
-        """Sinh instance từ RRULE và gỡ những occurrence nằm trong EXDATE."""
+    @staticmethod
+    def occurrences(master):
+        """Thời điểm bắt đầu của mọi buổi, theo đúng ngữ nghĩa Google Calendar.
+
+        Viết độc lập với code đang test: dtstart mang ZoneInfo nên dateutil cộng ngày
+        theo giờ treo tường (offset tự đổi qua mốc DST) — giống Google.
+        """
         rules = master.get("recurrence") or []
         rrule_line = next((rule for rule in rules if rule.startswith("RRULE:")), None)
+        if not rrule_line:
+            return []
+        start = parse_dt(master["start"]["dateTime"])
+        zone = master["start"].get("timeZone")
+        if zone:
+            start = start.astimezone(ZoneInfo(zone))
+        produced = list(rrulestr(rrule_line[len("RRULE:"):], dtstart=start))
+        if start not in produced:
+            produced.insert(0, start)  # Google: DTSTART luôn là một buổi
+        return produced
+
+    def _materialize(self, calendar_id, master):
+        """Sinh instance từ RRULE, gỡ occurrence trong EXDATE hoặc nằm ngoài luật mới."""
+        rules = master.get("recurrence") or []
         exdates = set()
         for rule in rules:
             if rule.startswith("EXDATE"):
                 _, _, value = rule.rpartition(":")
                 exdates.update(token.strip() for token in value.split(","))
-        if not rrule_line:
-            return
 
         events = self.store[calendar_id]
         start = parse_dt(master["start"]["dateTime"])
         duration = parse_dt(master["end"]["dateTime"]) - start
-
-        for occurrence in rrulestr(rrule_line[len("RRULE:"):], dtstart=start):
+        wanted = {}
+        for occurrence in self.occurrences(master):
             token = stamp(occurrence)
-            instance_id = f"{master['id']}_{token}"
-            if token in exdates:
-                if events.pop(instance_id, None) is not None:
-                    self.gone.add(instance_id)
-                continue
+            if token not in exdates:
+                wanted[f"{master['id']}_{token}"] = occurrence
+
+        # Luật lặp bị rút ngắn (UNTIL) hay EXDATE → Google bỏ các buổi không còn thuộc chuỗi.
+        for instance_id in [
+            event_id for event_id, value in events.items()
+            if value.get("recurringEventId") == master["id"] and event_id not in wanted
+        ]:
+            events.pop(instance_id)
+            self.gone.add(instance_id)
+
+        for instance_id, occurrence in wanted.items():
             if instance_id in events:
                 continue
             events[instance_id] = {
@@ -233,9 +269,12 @@ class FakeCalendarService:
                 "description": master.get("description", ""),
                 "location": master.get("location", ""),
                 "recurringEventId": master["id"],
+                "extendedProperties": master.get("extendedProperties", {}),
                 "originalStartTime": {"dateTime": occurrence.isoformat()},
-                "start": {"dateTime": occurrence.isoformat()},
-                "end": {"dateTime": (occurrence + duration).isoformat()},
+                "start": {"dateTime": occurrence.isoformat(),
+                          "timeZone": master["start"].get("timeZone")},
+                "end": {"dateTime": (occurrence + duration).isoformat(),
+                        "timeZone": master["end"].get("timeZone")},
             }
 
     # ---------------- dựng dữ liệu cho test ----------------
