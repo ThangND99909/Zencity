@@ -31,6 +31,25 @@ if not AUTH_SECRET:
     # Development-only secret. It deliberately changes when the process restarts.
     AUTH_SECRET = secrets.token_urlsafe(48)
 
+# Khoá cho service khác (ZenGuide AI Dashboard) gọi API qua header X-API-Key.
+# Để trống = tắt hẳn đường xác thực này. Khoá CHỈ mở được SERVICE_API_ROUTES —
+# không sửa/xoá được lịch, để lộ khoá cũng không xoá được dữ liệu.
+SERVICE_API_KEY = os.getenv("SERVICE_API_KEY", "").strip()
+SERVICE_API_KEY_MIN_LENGTH = 32
+
+if SERVICE_API_KEY and len(SERVICE_API_KEY) < SERVICE_API_KEY_MIN_LENGTH:
+    raise RuntimeError(
+        f"SERVICE_API_KEY must be at least {SERVICE_API_KEY_MIN_LENGTH} characters"
+    )
+
+SERVICE_API_ROUTES = frozenset({
+    ("GET", "/programs"),
+    ("GET", "/timezones"),
+    ("POST", "/check-conflict"),
+    ("POST", "/classes/preview"),
+    ("POST", "/classes"),
+})
+
 # Số lớp proxy tin cậy đứng trước ứng dụng (Render/Cloudflare/nginx...).
 # 0 = không có proxy ⇒ BỎ QUA hoàn toàn header X-Forwarded-For.
 TRUSTED_PROXY_COUNT = int(os.getenv("TRUSTED_PROXY_COUNT", "0"))
@@ -153,3 +172,13 @@ def validate_access_token(token: str) -> bool:
         return int(data.get("exp", 0)) > int(time.time())
     except (ValueError, TypeError, json.JSONDecodeError):
         return False
+
+
+def verify_service_api_key(api_key: str) -> bool:
+    return bool(SERVICE_API_KEY) and hmac.compare_digest(
+        (api_key or "").encode(), SERVICE_API_KEY.encode()
+    )
+
+
+def is_service_api_route(method: str, path: str) -> bool:
+    return (method.upper(), path.rstrip("/") or "/") in SERVICE_API_ROUTES

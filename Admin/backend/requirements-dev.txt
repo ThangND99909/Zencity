@@ -1,3 +1,4 @@
 -r requirements.txt
 pytest==8.3.5
-httpx>=0.25,<1
+# <0.28: httpx 0.28 bỏ tham số app= mà TestClient của FastAPI 0.104 còn dùng
+httpx>=0.25,<0.28

@@ -1178,6 +1178,50 @@ def create_event(class_info, idempotency_key=None):
         traceback.print_exc()
         raise
 
+
+def preview_event(class_info):
+    """Chạy thử create_event: mỗi đoạn sẽ vào calendar nào — KHÔNG ghi gì lên Google.
+
+    Dùng đúng parity_of / plan_series_segments như _plan_event_bodies nên kết quả
+    khớp với lúc tạo thật, kể cả khi chuỗi bị tách tại mốc đổi giờ.
+    """
+    timezone_name = validate_timezone(class_info.get('timezone', 'Asia/Ho_Chi_Minh'))
+    start_utc = to_utc(normalize_datetime_with_timezone(class_info['start'], timezone_name), timezone_name)
+    end_utc = to_utc(normalize_datetime_with_timezone(class_info['end'], timezone_name), timezone_name)
+    if end_utc <= start_utc:
+        raise ValueError("Event end time must be later than its start time")
+
+    recurrence = class_info.get('rrule') or []
+    if has_rrule(recurrence):
+        segments = [
+            (segment.parity, segment.starts)
+            for segment in plan_series_segments(start_utc, timezone_name, recurrence)
+        ]
+    else:
+        segments = [(parity_of(start_utc), (start_utc,))]
+
+    tz = pytz.timezone(timezone_name)
+
+    def describe(moment):
+        return {
+            'local': moment.astimezone(tz).isoformat(),
+            'vietnam': moment.astimezone(PARITY_TIMEZONE).isoformat(),
+        }
+
+    return {
+        'timezone': timezone_name,
+        'occurrence_count': sum(len(starts) for _, starts in segments),
+        'segments': [
+            {
+                'calendar': parity,
+                'occurrence_count': len(starts),
+                'first_start': describe(starts[0]),
+                'last_start': describe(starts[-1]),
+            }
+            for parity, starts in segments
+        ],
+    }
+
 # ========== GOOGLE CALENDAR UPDATE FUNCTIONS ==========
 
 

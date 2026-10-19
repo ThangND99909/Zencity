@@ -5,6 +5,7 @@ from googleapiclient.discovery import build
 import google_auth_httplib2
 import httplib2
 import threading
+from dotenv import dotenv_values
 from log_config import make_print
 
 print = make_print(__name__)
@@ -55,8 +56,27 @@ def create_calendar_http(timeout=30):
     return transport
 
 # ========== ĐỊNH NGHĨA 2 CALENDAR ==========
-CALENDAR_ODD = 'cf06d74dce3c09de7fcf3926e7c50d80b8d607f3eaadfa7eb1b52fdd361fb8eb@group.calendar.google.com'
-CALENDAR_EVEN = '2c0db271c8b768080efd745887e99bfa6b29e6e8e72b7f3a11e8406401a2ac94@group.calendar.google.com'
+# Mặc định là 2 calendar THẬT đang nối với Notta bot. Môi trường test/staging PHẢI đặt
+# CALENDAR_ODD_ID / CALENDAR_EVEN_ID sang calendar test, nếu không Notta bot sẽ vào họp thật.
+#
+# Module này được import TRƯỚC khi ai_agent gọi load_dotenv(), nên đọc thẳng .env bằng
+# dotenv_values() — chỉ lấy 2 biến này, KHÔNG nạp .env vào os.environ để không đổi cách
+# đọc GOOGLE_SERVICE_ACCOUNT ở trên. Biến để trống cũng rơi về calendar mặc định.
+_DOTENV = dotenv_values()
+
+
+def _calendar_id(name, default):
+    return (os.getenv(name) or _DOTENV.get(name) or "").strip() or default
+
+
+CALENDAR_ODD = _calendar_id(
+    "CALENDAR_ODD_ID",
+    'cf06d74dce3c09de7fcf3926e7c50d80b8d607f3eaadfa7eb1b52fdd361fb8eb@group.calendar.google.com',
+)
+CALENDAR_EVEN = _calendar_id(
+    "CALENDAR_EVEN_ID",
+    '2c0db271c8b768080efd745887e99bfa6b29e6e8e72b7f3a11e8406401a2ac94@group.calendar.google.com',
+)
 
 CALENDARS = {
     'odd': CALENDAR_ODD,

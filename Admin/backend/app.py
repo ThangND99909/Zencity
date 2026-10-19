@@ -10,6 +10,7 @@ from calendar_crud import (
     delete_event,
     get_event,
     invalidate_cache,
+    preview_event,
 )
 from program_crud import get_all_programs, create_program, update_program, delete_program
 from check_conflict import (
@@ -29,10 +30,12 @@ from auth import (
     clear_attempts,
     create_access_token,
     is_rate_limited,
+    is_service_api_route,
     record_failed_attempt,
     resolve_client_key,
     validate_access_token,
     verify_passcode,
+    verify_service_api_key,
 )
 import os
 
@@ -100,6 +103,19 @@ def calendar_http_error_detail(error):
 @app.middleware("http")
 async def require_admin_session(request: Request, call_next):
     if request.method == "OPTIONS" or request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    # Service-to-service (ZenGuide AI Dashboard). Có gửi X-API-Key thì CHỈ xét khoá,
+    # không rơi xuống nhánh Bearer — khoá sai phải là 401 rõ ràng.
+    api_key = request.headers.get("X-API-Key")
+    if api_key is not None:
+        if not verify_service_api_key(api_key):
+            return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
+        if not is_service_api_route(request.method, request.url.path):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "API key is not allowed to access this route"},
+            )
         return await call_next(request)
 
     authorization = request.headers.get("Authorization", "")
@@ -343,6 +359,39 @@ def add_class(
         print(f"❌ Error in add_class: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/classes/preview")
+def preview_class(class_info: ClassInfo):
+    """Chạy thử POST /classes: calendar CHẴN/LẺ của từng đoạn + trùng lịch giáo viên.
+
+    Không ghi gì lên Google. ZenGuide chatbot dùng để hiển thị thẻ xác nhận trước khi tạo.
+    """
+    try:
+        data = class_info.model_dump(exclude={"request_id"})
+        recurrence_rule = build_recurrence_rule(data)
+        data["rrule"] = [recurrence_rule] if recurrence_rule else None
+
+        plan = preview_event(data)
+        conflict = run_conflict_check(ConflictCheckRequest(
+            teacher=class_info.teacher,
+            start=class_info.start,
+            end=class_info.end,
+            recurrence=class_info.recurrence or "",
+            repeat_count=class_info.repeat_count,
+            byday=class_info.byday,
+            bymonthday=class_info.bymonthday,
+            bymonth=class_info.bymonth,
+            timezone=class_info.timezone,
+        ))
+        return {**plan, "conflict": conflict}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HttpError as e:
+        print(f"❌ Google Calendar error in preview_class: {e}")
+        raise HTTPException(status_code=503, detail=calendar_http_error_detail(e))
+    except Exception as e:
+        print(f"❌ Error in preview_class: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @app.put("/classes/{event_id}")
 def edit_class(event_id: str, class_info: ClassInfo, edit_mode: str = 'this'):
     try:
@@ -392,6 +441,57 @@ def ai_suggest(teacher: str = None, duration_hours: int = 1):
         print(f"❌ Error in ai_suggest: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
+def run_conflict_check(request: ConflictCheckRequest):
+    """Bung luật lặp và đối chiếu với lịch hiện có. Lỗi được raise cho caller xử lý."""
+    print(f"🔄 Traditional conflict check for: {request.teacher}")
+
+    # 1️⃣ Bung luật lặp thành từng buổi cụ thể. Sự kiện đơn → đúng 1 buổi.
+    occurrences, truncated = expand_occurrences(request.start, request.end, request.model_dump())
+
+    # 2️⃣ Chuỗi lặp dài có thể vượt trần cửa sổ của list_events → nạp theo từng cụm,
+    #    nếu không các buổi cuối chuỗi sẽ không có dữ liệu đối chiếu.
+    conflicts = []
+    checked_occurrences = 0
+    for window in group_occurrences_into_windows(occurrences):
+        window_start, window_end = window_bounds(window)
+        existing_classes = list_events(
+            'both',
+            time_min=window_start.isoformat().replace('+00:00', 'Z'),
+            time_max=window_end.isoformat().replace('+00:00', 'Z')
+        )
+        window_result = find_conflicts(
+            existing_classes=existing_classes,
+            teacher=request.teacher,
+            occurrences=window,
+            exclude_event_id=request.exclude_event_id,
+            exclude_master_event_id=request.exclude_master_event_id
+        )
+        conflicts.extend(window_result['conflicts'])
+        checked_occurrences += window_result['checked_occurrences']
+
+    result = {
+        'has_conflict': len(conflicts) > 0,
+        # Giới hạn kích thước payload; conflict_count vẫn là tổng thật.
+        'conflicts': conflicts[:MAX_REPORTED_CONFLICTS],
+        'conflict_count': len(conflicts),
+        'checked_occurrences': checked_occurrences,
+        'occurrences_truncated': truncated,
+    }
+
+    if result['has_conflict']:
+        result['message'] = (
+            f"⚠️ Giáo viên {request.teacher} bị trùng {len(conflicts)} lượt "
+            f"trên {checked_occurrences} buổi đã kiểm tra"
+        )
+    else:
+        result['message'] = (
+            f"✅ Không có xung đột với giáo viên {request.teacher} "
+            f"({checked_occurrences} buổi đã kiểm tra)"
+        )
+
+    return result
+
+
 @app.post("/check-conflict")
 def api_check_conflict(request: ConflictCheckRequest):
     """API endpoint kiểm tra xung đột - CHỈ DÙNG TRADITIONAL CHECK.
@@ -402,53 +502,7 @@ def api_check_conflict(request: ConflictCheckRequest):
     cho tạo sự kiện trùng.
     """
     try:
-        print(f"🔄 Traditional conflict check for: {request.teacher}")
-
-        # 1️⃣ Bung luật lặp thành từng buổi cụ thể. Sự kiện đơn → đúng 1 buổi.
-        occurrences, truncated = expand_occurrences(request.start, request.end, request.model_dump())
-
-        # 2️⃣ Chuỗi lặp dài có thể vượt trần cửa sổ của list_events → nạp theo từng cụm,
-        #    nếu không các buổi cuối chuỗi sẽ không có dữ liệu đối chiếu.
-        conflicts = []
-        checked_occurrences = 0
-        for window in group_occurrences_into_windows(occurrences):
-            window_start, window_end = window_bounds(window)
-            existing_classes = list_events(
-                'both',
-                time_min=window_start.isoformat().replace('+00:00', 'Z'),
-                time_max=window_end.isoformat().replace('+00:00', 'Z')
-            )
-            window_result = find_conflicts(
-                existing_classes=existing_classes,
-                teacher=request.teacher,
-                occurrences=window,
-                exclude_event_id=request.exclude_event_id,
-                exclude_master_event_id=request.exclude_master_event_id
-            )
-            conflicts.extend(window_result['conflicts'])
-            checked_occurrences += window_result['checked_occurrences']
-
-        result = {
-            'has_conflict': len(conflicts) > 0,
-            # Giới hạn kích thước payload; conflict_count vẫn là tổng thật.
-            'conflicts': conflicts[:MAX_REPORTED_CONFLICTS],
-            'conflict_count': len(conflicts),
-            'checked_occurrences': checked_occurrences,
-            'occurrences_truncated': truncated,
-        }
-
-        if result['has_conflict']:
-            result['message'] = (
-                f"⚠️ Giáo viên {request.teacher} bị trùng {len(conflicts)} lượt "
-                f"trên {checked_occurrences} buổi đã kiểm tra"
-            )
-        else:
-            result['message'] = (
-                f"✅ Không có xung đột với giáo viên {request.teacher} "
-                f"({checked_occurrences} buổi đã kiểm tra)"
-            )
-
-        return result
+        return run_conflict_check(request)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
