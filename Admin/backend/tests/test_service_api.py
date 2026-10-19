@@ -52,6 +52,20 @@ def test_service_key_opens_allowed_route(service_key):
     assert response.status_code == 200
 
 
+def test_service_key_can_read_classes(service_key):
+    events = [{"id": "e1", "summary": "Room 4B - Teacher A - ASVN"}]
+    with patch.object(app_module, "list_events", return_value=events) as list_events:
+        response = client.get(
+            "/classes",
+            params={"time_min": "2026-10-19T00:00:00Z", "time_max": "2026-10-26T00:00:00Z"},
+            headers=service_key,
+        )
+
+    assert response.status_code == 200
+    assert response.json() == events
+    list_events.assert_called_once_with("both", "2026-10-19T00:00:00Z", "2026-10-26T00:00:00Z")
+
+
 def test_wrong_service_key_is_rejected(service_key):
     response = client.get("/timezones", headers={"X-API-Key": SERVICE_KEY + "x"})
     assert response.status_code == 401
@@ -64,7 +78,6 @@ def test_any_key_is_rejected_when_service_key_is_not_configured(monkeypatch):
 
 
 @pytest.mark.parametrize("method, path", [
-    ("GET", "/classes"),
     ("GET", "/classes/event-1"),
     ("PUT", "/classes/event-1"),
     ("DELETE", "/classes/event-1"),

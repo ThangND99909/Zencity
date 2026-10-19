@@ -43,6 +43,7 @@ if SERVICE_API_KEY and len(SERVICE_API_KEY) < SERVICE_API_KEY_MIN_LENGTH:
     )
 
 SERVICE_API_ROUTES = frozenset({
+    ("GET", "/classes"),  # read-only: ZenGuide answers staff questions about scheduled classes
     ("GET", "/programs"),
     ("GET", "/timezones"),
     ("POST", "/check-conflict"),
