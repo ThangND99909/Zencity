@@ -32,8 +32,9 @@ if not AUTH_SECRET:
     AUTH_SECRET = secrets.token_urlsafe(48)
 
 # Khoá cho service khác (ZenGuide AI Dashboard) gọi API qua header X-API-Key.
-# Để trống = tắt hẳn đường xác thực này. Khoá CHỈ mở được SERVICE_API_ROUTES —
-# không sửa/xoá được lịch, để lộ khoá cũng không xoá được dữ liệu.
+# Để trống = tắt hẳn đường xác thực này. Khoá CHỈ mở được SERVICE_API_ROUTES:
+# đọc/tạo/sửa/xoá lớp như form Smart Calendar, KHÔNG đụng được programs hay
+# các route quản trị khác.
 SERVICE_API_KEY = os.getenv("SERVICE_API_KEY", "").strip()
 SERVICE_API_KEY_MIN_LENGTH = 32
 
@@ -42,13 +43,18 @@ if SERVICE_API_KEY and len(SERVICE_API_KEY) < SERVICE_API_KEY_MIN_LENGTH:
         f"SERVICE_API_KEY must be at least {SERVICE_API_KEY_MIN_LENGTH} characters"
     )
 
+# "{...}" khớp đúng MỘT đoạn path, vd "/classes/{event_id}" khớp "/classes/abc_20261110T000000Z".
 SERVICE_API_ROUTES = frozenset({
-    ("GET", "/classes"),  # read-only: ZenGuide answers staff questions about scheduled classes
+    ("GET", "/classes"),
     ("GET", "/programs"),
     ("GET", "/timezones"),
     ("POST", "/check-conflict"),
     ("POST", "/classes/preview"),
     ("POST", "/classes"),
+    # Chatbot ZenGuide kiểm tra, sửa và xoá lớp (luôn có bước xác nhận của người dùng).
+    ("GET", "/classes/{event_id}"),
+    ("PUT", "/classes/{event_id}"),
+    ("DELETE", "/classes/{event_id}"),
 })
 
 # Số lớp proxy tin cậy đứng trước ứng dụng (Render/Cloudflare/nginx...).
@@ -181,5 +187,17 @@ def verify_service_api_key(api_key: str) -> bool:
     )
 
 
+def _path_matches(template: str, path: str) -> bool:
+    template_parts, path_parts = template.split("/"), path.split("/")
+    return len(template_parts) == len(path_parts) and all(
+        expected == actual or (expected.startswith("{") and expected.endswith("}") and actual != "")
+        for expected, actual in zip(template_parts, path_parts)
+    )
+
+
 def is_service_api_route(method: str, path: str) -> bool:
-    return (method.upper(), path.rstrip("/") or "/") in SERVICE_API_ROUTES
+    method, path = method.upper(), path.rstrip("/") or "/"
+    return any(
+        route_method == method and _path_matches(route_path, path)
+        for route_method, route_path in SERVICE_API_ROUTES
+    )

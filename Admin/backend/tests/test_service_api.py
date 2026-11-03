@@ -1,7 +1,8 @@
 """API cho service khác (ZenGuide AI Dashboard) gọi vào bằng X-API-Key.
 
 Hai phần được khoá lại ở đây:
-  - X-API-Key chỉ mở đúng các route trong SERVICE_API_ROUTES — không sửa/xoá được lịch;
+  - X-API-Key chỉ mở đúng các route trong SERVICE_API_ROUTES (đọc/tạo/sửa/xoá lớp),
+    không đụng được programs hay route quản trị khác;
   - POST /classes/preview chạy thử đúng quy tắc CHẴN/LẺ như lúc tạo thật và không ghi
     gì lên Google.
 """
@@ -77,13 +78,28 @@ def test_any_key_is_rejected_when_service_key_is_not_configured(monkeypatch):
     assert response.status_code == 401
 
 
+def test_service_key_can_read_edit_and_delete_one_class(service_key):
+    event_id = "master1_20261020T230000Z"
+    with patch.object(app_module, "get_event", return_value={"id": event_id}) as get_event,             patch.object(app_module, "update_event", return_value={"id": event_id}) as update_event,             patch.object(app_module, "delete_event", return_value={"status": "deleted"}) as delete_event:
+        read = client.get(f"/classes/{event_id}", headers=service_key)
+        edit = client.put(f"/classes/{event_id}", params={"edit_mode": "this"}, json=CLASS, headers=service_key)
+        delete = client.delete(f"/classes/{event_id}", params={"delete_mode": "following"}, headers=service_key)
+
+    assert (read.status_code, edit.status_code, delete.status_code) == (200, 200, 200)
+    get_event.assert_called_once_with(event_id)
+    assert update_event.call_args.args[0] == event_id
+    assert update_event.call_args.args[1]["edit_mode"] == "this"
+    delete_event.assert_called_once_with(event_id, "following")
+
+
 @pytest.mark.parametrize("method, path", [
-    ("GET", "/classes/event-1"),
-    ("PUT", "/classes/event-1"),
-    ("DELETE", "/classes/event-1"),
     ("POST", "/programs"),
+    ("PUT", "/programs/p1"),
     ("DELETE", "/programs/p1"),
     ("GET", "/ai/suggest"),
+    ("DELETE", "/classes"),
+    ("DELETE", "/classes/a/b"),
+    ("PUT", "/classes/"),
 ])
 def test_service_key_cannot_reach_other_routes(service_key, method, path):
     with patch.object(app_module, "delete_event", side_effect=AssertionError("must not run")), \
