@@ -521,28 +521,19 @@ def api_check_conflict(request: ConflictCheckRequest):
             },
         )
 
-# Múi giờ được phép chọn khi tạo/sửa lớp: CHỈ Việt Nam và Hoa Kỳ.
+# Múi giờ được phép chọn khi tạo/sửa lớp: CHỈ Việt Nam và Chicago.
 #
-# Trước đây danh sách chỉ có VN + Chicago, nên thầy cô ở New York buộc phải chọn
-# "Giờ Miền Trung" → lệch 1 tiếng, Los Angeles lệch 2 tiếng. Nay đủ các múi giờ của Mỹ.
-#
-# Arizona và Hawaii KHÔNG áp dụng giờ mùa hè — để riêng thay vì gộp vào Denver/Alaska,
-# vì gộp sẽ sai đúng 1 tiếng suốt nửa năm.
+# Trung tâm chỉ xếp lớp theo giờ Việt Nam (ASVN) và giờ Texas/Chicago (ASUS), nên
+# dropdown chỉ có đúng hai lựa chọn này. Giữ khớp với timezoneOptions ở CalendarView.js.
 SUPPORTED_TIMEZONES = [
     {"value": "Asia/Ho_Chi_Minh", "label": "🇻🇳 Giờ Việt Nam (UTC+7)"},
-    {"value": "America/New_York", "label": "🇺🇸 Giờ Miền Đông - New York (UTC-5/-4)"},
     {"value": "America/Chicago", "label": "🇺🇸 Giờ Miền Trung - Chicago (UTC-6/-5)"},
-    {"value": "America/Denver", "label": "🇺🇸 Giờ Miền Núi - Denver (UTC-7/-6)"},
-    {"value": "America/Phoenix", "label": "🇺🇸 Giờ Arizona (UTC-7, không đổi giờ)"},
-    {"value": "America/Los_Angeles", "label": "🇺🇸 Giờ Miền Tây - Los Angeles (UTC-8/-7)"},
-    {"value": "America/Anchorage", "label": "🇺🇸 Giờ Alaska (UTC-9/-8)"},
-    {"value": "Pacific/Honolulu", "label": "🇺🇸 Giờ Hawaii (UTC-10, không đổi giờ)"},
 ]
 
 
 @app.get("/timezones")
 def get_timezones():
-    """API lấy danh sách múi giờ hỗ trợ — chỉ Việt Nam và Hoa Kỳ."""
+    """API lấy danh sách múi giờ hỗ trợ: Việt Nam và Chicago."""
     return {"timezones": SUPPORTED_TIMEZONES}
 
 @app.get("/health")

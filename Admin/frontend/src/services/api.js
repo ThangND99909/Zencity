@@ -330,17 +330,11 @@ export const getTimezones = async () => {
     return res.data;
   } catch (error) {
     console.error("❌ Error fetching timezones, using fallback:", error);
-    // Fallback to hardcoded timezones
+    // Fallback giống SUPPORTED_TIMEZONES ở backend (app.py): chỉ Việt Nam và Chicago.
     return {
       timezones: [
         { value: "Asia/Ho_Chi_Minh", label: "🇻🇳 Giờ Việt Nam (UTC+7)" },
-        { value: "America/Chicago", label: "🇺🇸 Giờ miền Trung - Chicago (UTC-6/-5)" },
-        { value: "America/New_York", label: "🇺🇸 Giờ miền Đông - New York (UTC-5/-4)" },
-        { value: "America/Los_Angeles", label: "🇺🇸 Giờ miền Tây - Los Angeles (UTC-8/-7)" },
-        { value: "Europe/London", label: "🇬🇧 Giờ London (UTC+0/+1)" },
-        { value: "Europe/Paris", label: "🇫🇷 Giờ Paris (UTC+1/+2)" },
-        { value: "Asia/Tokyo", label: "🇯🇵 Giờ Tokyo (UTC+9)" },
-        { value: "Australia/Sydney", label: "🇦🇺 Giờ Sydney (UTC+10/+11)" },
+        { value: "America/Chicago", label: "🇺🇸 Giờ Miền Trung - Chicago (UTC-6/-5)" },
       ]
     };
   }

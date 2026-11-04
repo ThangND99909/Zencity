@@ -106,17 +106,11 @@ const CalendarView = forwardRef(function CalendarView({
   ]);
   
 
-  // Chỉ Việt Nam và Hoa Kỳ. Giữ khớp với SUPPORTED_TIMEZONES ở backend (app.py) để
+  // Chỉ Việt Nam và Chicago. Giữ khớp với SUPPORTED_TIMEZONES ở backend (app.py) để
   // form vẫn đúng ngay cả khi /timezones chưa kịp trả về.
   const [timezoneOptions, setTimezoneOptions] = useState([
     { value: "Asia/Ho_Chi_Minh", label: "🇻🇳 Giờ Việt Nam (UTC+7)" },
-    { value: "America/New_York", label: "🇺🇸 Giờ Miền Đông - New York (UTC-5/-4)" },
     { value: "America/Chicago", label: "🇺🇸 Giờ Miền Trung - Chicago (UTC-6/-5)" },
-    { value: "America/Denver", label: "🇺🇸 Giờ Miền Núi - Denver (UTC-7/-6)" },
-    { value: "America/Phoenix", label: "🇺🇸 Giờ Arizona (UTC-7, không đổi giờ)" },
-    { value: "America/Los_Angeles", label: "🇺🇸 Giờ Miền Tây - Los Angeles (UTC-8/-7)" },
-    { value: "America/Anchorage", label: "🇺🇸 Giờ Alaska (UTC-9/-8)" },
-    { value: "Pacific/Honolulu", label: "🇺🇸 Giờ Hawaii (UTC-10, không đổi giờ)" },
   ]);
 
   const [managedProgramOptions, setManagedProgramOptions] = useState([]);
