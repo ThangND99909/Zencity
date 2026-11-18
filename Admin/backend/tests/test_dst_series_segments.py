@@ -445,6 +445,86 @@ def test_sua_tu_buoi_o_doan_sau_khong_dung_doan_dau(calendar):
     assert_all_in_right_calendar(service)
 
 
+def edit_one(crud, service, label, start, end):
+    info = class_info(start=start, end=end, byday=None)
+    info['edit_mode'] = 'this'
+    crud.update_event(instance_at(service, label), info)
+
+
+def days_of(service):
+    return [label for label, _ in schedule(service)]
+
+
+def test_sua_following_khong_nhan_doi_buoi_da_sua_rieng(calendar):
+    """Lỗi cũ (tái hiện trên Google thật): buổi đã sửa riêng xuất hiện 2 lần sau khi sửa
+    'following', vì chuỗi mới dựng lại luật lặp mà không mang theo EXDATE."""
+    service, crud = calendar
+    create_mwf(crud)
+    edit_one(crud, service, 'Wed 28/10 20:00', '2026-10-28T21:00:00', '2026-10-28T22:00:00')
+
+    crud.update_event(
+        instance_at(service, 'Mon 26/10 20:00'),
+        follow_edit('2026-10-26T19:00:00', '2026-10-26T20:00:00', count=9),
+    )
+
+    labels = days_of(service)
+    assert [label for label in labels if label.startswith('Wed 28/10')] == ['Wed 28/10 21:00']
+    assert len(labels) == 12
+    assert labels[-1] == 'Fri 13/11 19:00'
+    assert_all_in_right_calendar(service)
+
+
+def test_sua_following_khong_hoi_sinh_buoi_da_xoa_rieng(calendar):
+    """Lỗi cũ (tái hiện trên Google thật): buổi đã xóa riêng hiện lại sau khi sửa 'following'."""
+    service, crud = calendar
+    create_mwf(crud)
+    crud.delete_event(instance_at(service, 'Fri 30/10 20:00'), delete_mode='this')
+
+    crud.update_event(
+        instance_at(service, 'Mon 26/10 20:00'),
+        follow_edit('2026-10-26T19:00:00', '2026-10-26T20:00:00', count=9),
+    )
+
+    labels = days_of(service)
+    assert not any(label.startswith('Fri 30/10') for label in labels)
+    assert len(labels) == 11
+    assert labels[-1] == 'Fri 13/11 19:00'   # COUNT vẫn tính buổi đã xóa: kết thúc đúng ngày cũ
+    assert_all_in_right_calendar(service)
+    assert_no_duplicates(service)
+
+
+def test_sua_following_giu_buoi_da_xoa_o_doan_sau(calendar):
+    """Buổi đã xóa nằm ở đoạn sau (calendar kia) cũng không được hiện lại."""
+    service, crud = calendar
+    create_mwf(crud)
+    crud.delete_event(instance_at(service, 'Wed 04/11 20:00'), delete_mode='this')
+
+    crud.update_event(
+        instance_at(service, 'Mon 26/10 20:00'),
+        follow_edit('2026-10-26T19:00:00', '2026-10-26T20:00:00', count=9),
+    )
+
+    labels = days_of(service)
+    assert not any(label.startswith('Wed 04/11') for label in labels)
+    assert len(labels) == 11
+    assert_all_in_right_calendar(service)
+
+
+def test_sua_following_chuoi_khong_co_ngoai_le_giu_nguyen_luat(calendar):
+    service, crud = calendar
+    create_mwf(crud)
+
+    crud.update_event(
+        instance_at(service, 'Mon 26/10 20:00'),
+        follow_edit('2026-10-26T19:00:00', '2026-10-26T20:00:00', count=9),
+    )
+
+    new_masters = [event for _, event in masters(service).values() if event['start']['dateTime'] >= '2026-10-26']
+    assert new_masters and all(
+        not any(line.startswith('EXDATE') for line in event['recurrence']) for event in new_masters
+    )
+
+
 def test_sua_tu_buoi_nay_loi_khi_cat_chuoi_cu_thi_go_chuoi_moi(calendar):
     service, crud = calendar
     create_mwf(crud)

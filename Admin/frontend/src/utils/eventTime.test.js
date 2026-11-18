@@ -222,40 +222,18 @@ describe("getViewerTimezone", () => {
   });
 });
 
-// Đúng danh sách backend trả về (app.py SUPPORTED_TIMEZONES): chỉ VN + Hoa Kỳ.
-const SUPPORTED = [
-  "Asia/Ho_Chi_Minh",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Phoenix",
-  "America/Los_Angeles",
-  "America/Anchorage",
-  "Pacific/Honolulu",
-];
+// Đúng danh sách backend trả về (app.py SUPPORTED_TIMEZONES): chỉ Việt Nam và Chicago.
+const SUPPORTED = ["Asia/Ho_Chi_Minh", "America/Chicago"];
 
 describe("resolveDefaultTimezone", () => {
   test.each(SUPPORTED)("giữ nguyên múi giờ được hỗ trợ: %s", (zone) => {
     expect(resolveDefaultTimezone(zone, SUPPORTED)).toBe(zone);
   });
 
-  test("các múi giờ Mỹ trước đây bị bỏ sót nay được nhận đúng", () => {
-    // Danh sách cứng cũ chỉ có Chicago / New_York / Los_Angeles, nên bốn múi giờ
-    // dưới đây rơi hết về giờ Việt Nam — lớp bị tạo lệch tới 13 tiếng.
-    ["America/Denver", "America/Phoenix", "America/Anchorage", "Pacific/Honolulu"]
-      .forEach((zone) => {
-        expect(resolveDefaultTimezone(zone, SUPPORTED)).toBe(zone);
-        expect(resolveDefaultTimezone(zone, SUPPORTED)).not.toBe(FALLBACK_TIMEZONE);
-      });
-  });
-
   test("tên legacy và tên phụ được quy đổi", () => {
     expect(resolveDefaultTimezone("Asia/Saigon", SUPPORTED)).toBe("Asia/Ho_Chi_Minh");
+    expect(resolveDefaultTimezone("Asia/HoChiMinh", SUPPORTED)).toBe("Asia/Ho_Chi_Minh");
     expect(resolveDefaultTimezone("US/Central", SUPPORTED)).toBe("America/Chicago");
-    expect(resolveDefaultTimezone("US/Arizona", SUPPORTED)).toBe("America/Phoenix");
-    expect(resolveDefaultTimezone("US/Hawaii", SUPPORTED)).toBe("Pacific/Honolulu");
-    expect(resolveDefaultTimezone("America/Detroit", SUPPORTED)).toBe("America/New_York");
-    expect(resolveDefaultTimezone("America/Boise", SUPPORTED)).toBe("America/Denver");
   });
 
   test("mọi alias đều trỏ tới một múi giờ có trong danh sách hỗ trợ", () => {
@@ -264,8 +242,16 @@ describe("resolveDefaultTimezone", () => {
     });
   });
 
+  test("các múi giờ Mỹ khác không có trong dropdown thì về giờ Việt Nam", () => {
+    ["America/New_York", "America/Denver", "America/Phoenix", "America/Los_Angeles",
+      "America/Anchorage", "Pacific/Honolulu", "US/Eastern", "US/Pacific"]
+      .forEach((zone) => {
+        expect(resolveDefaultTimezone(zone, SUPPORTED)).toBe(FALLBACK_TIMEZONE);
+      });
+  });
+
   test("múi giờ không hỗ trợ thì về giờ Việt Nam", () => {
-    // Sản phẩm chỉ phục vụ VN + Hoa Kỳ, nên thầy cô ở nơi khác lấy mặc định VN.
+    // Dropdown chỉ có Việt Nam và Chicago, nên thầy cô ở nơi khác lấy mặc định VN.
     ["Europe/London", "Asia/Bangkok", "Asia/Tokyo", "Australia/Sydney"]
       .forEach((zone) => {
         expect(resolveDefaultTimezone(zone, SUPPORTED)).toBe(FALLBACK_TIMEZONE);

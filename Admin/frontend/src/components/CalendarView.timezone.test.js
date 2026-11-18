@@ -244,10 +244,8 @@ describe("CalendarView hiển thị theo múi giờ người xem", () => {
 });
 
 /**
- * Lớp mới phải mặc định vào múi giờ của chính người đang tạo — miễn là sản phẩm hỗ
- * trợ (Việt Nam + Hoa Kỳ). Trước đây `openPopup` đối chiếu với một danh sách 7 múi
- * giờ viết cứng, tách rời khỏi dropdown, nên Denver/Phoenix/Anchorage/Honolulu rơi hết
- * về giờ Việt Nam trong khi ô giờ vừa bấm lại là giờ của họ → lệch tới 13 tiếng.
+ * Dropdown múi giờ chỉ có giờ Việt Nam và giờ Chicago. Lớp mới mặc định theo múi giờ
+ * của người đang tạo nếu là một trong hai múi giờ đó, ngược lại thì giờ Việt Nam.
  */
 describe("Múi giờ mặc định khi tạo lớp mới", () => {
   let container;
@@ -255,15 +253,10 @@ describe("Múi giờ mặc định khi tạo lớp mới", () => {
   let consoleError;
   let resolvedOptionsSpy;
 
-  const US_OPTIONS = [
+  // Đúng danh sách backend trả về (app.py SUPPORTED_TIMEZONES).
+  const TZ_OPTIONS = [
     { value: "Asia/Ho_Chi_Minh", label: "🇻🇳 Giờ Việt Nam (UTC+7)" },
-    { value: "America/New_York", label: "🇺🇸 Giờ Miền Đông - New York (UTC-5/-4)" },
     { value: "America/Chicago", label: "🇺🇸 Giờ Miền Trung - Chicago (UTC-6/-5)" },
-    { value: "America/Denver", label: "🇺🇸 Giờ Miền Núi - Denver (UTC-7/-6)" },
-    { value: "America/Phoenix", label: "🇺🇸 Giờ Arizona (UTC-7, không đổi giờ)" },
-    { value: "America/Los_Angeles", label: "🇺🇸 Giờ Miền Tây - Los Angeles (UTC-8/-7)" },
-    { value: "America/Anchorage", label: "🇺🇸 Giờ Alaska (UTC-9/-8)" },
-    { value: "Pacific/Honolulu", label: "🇺🇸 Giờ Hawaii (UTC-10, không đổi giờ)" },
   ];
 
   // Giả lập trình duyệt đang ở một múi giờ khác mà KHÔNG phá toLocaleString.
@@ -282,7 +275,7 @@ describe("Múi giờ mặc định khi tạo lớp mới", () => {
     root = createRoot(container);
     consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
     getPrograms.mockResolvedValue([{ id: "program-1", name: "Program A" }]);
-    getTimezones.mockResolvedValue({ timezones: US_OPTIONS });
+    getTimezones.mockResolvedValue({ timezones: TZ_OPTIONS });
     checkScheduleConflict.mockResolvedValue({ has_conflict: false, conflicts: [] });
     getEvent.mockReset();
   });
@@ -327,55 +320,45 @@ describe("Múi giờ mặc định khi tạo lớp mới", () => {
   };
 
   test.each([
-    ["America/Denver"],
-    ["America/Phoenix"],
-    ["America/Anchorage"],
-    ["Pacific/Honolulu"],
-    ["America/New_York"],
-    ["America/Chicago"],
-    ["America/Los_Angeles"],
-    ["Asia/Ho_Chi_Minh"],
-  ])("người tạo ở %s thì form mặc định đúng múi giờ đó", async (zone) => {
+    ["America/Chicago", "America/Chicago"],
+    ["US/Central", "America/Chicago"],
+    ["Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh"],
+    ["Asia/Saigon", "Asia/Ho_Chi_Minh"],
+  ])("người tạo ở %s thì form mặc định %s", async (zone, expected) => {
     pretendViewerIsIn(zone);
 
     const select = await openCreateForm();
 
-    expect(select.value).toBe(zone);
+    expect(select.value).toBe(expected);
   });
 
-  test("bốn múi giờ Mỹ từng bị danh sách cứng bỏ sót nay không còn rơi về giờ VN", async () => {
-    for (const zone of ["America/Denver", "America/Phoenix", "America/Anchorage", "Pacific/Honolulu"]) {
+  test.each([["America/New_York"], ["America/Los_Angeles"], ["Asia/Bangkok"], ["Europe/London"]])(
+    "người tạo ở %s (không có trong dropdown) thì mặc định giờ Việt Nam",
+    async (zone) => {
       pretendViewerIsIn(zone);
+
       const select = await openCreateForm();
-      expect(select.value).not.toBe("Asia/Ho_Chi_Minh");
-      resolvedOptionsSpy.mockRestore();
-      await act(async () => {
-        root.unmount();
-      });
-      container.remove();
-      container = document.createElement("div");
-      document.body.appendChild(container);
-      root = createRoot(container);
+
+      expect(select.value).toBe("Asia/Ho_Chi_Minh");
     }
-  });
+  );
 
-  test("người tạo ở nước không hỗ trợ thì mặc định giờ Việt Nam", async () => {
-    pretendViewerIsIn("Asia/Bangkok");
-
-    const select = await openCreateForm();
-
-    expect(select.value).toBe("Asia/Ho_Chi_Minh");
-  });
-
-  test("dropdown chỉ liệt kê múi giờ Việt Nam và Hoa Kỳ", async () => {
+  test("dropdown chỉ có giờ Việt Nam và giờ Chicago", async () => {
     pretendViewerIsIn("Asia/Ho_Chi_Minh");
 
     const select = await openCreateForm();
     const values = Array.from(select.options).map((option) => option.value);
 
-    expect(values).toEqual(US_OPTIONS.map((option) => option.value));
-    values.forEach((value) => {
-      expect(value === "Asia/Ho_Chi_Minh" || /^(America|Pacific)\//.test(value)).toBe(true);
-    });
+    expect(values).toEqual(["Asia/Ho_Chi_Minh", "America/Chicago"]);
+  });
+
+  test("dropdown mặc định (trước khi /timezones trả về) cũng chỉ có 2 múi giờ", async () => {
+    getTimezones.mockImplementation(() => new Promise(() => {}));   // API chưa trả về
+    pretendViewerIsIn("Asia/Ho_Chi_Minh");
+
+    const select = await openCreateForm();
+    const values = Array.from(select.options).map((option) => option.value);
+
+    expect(values).toEqual(["Asia/Ho_Chi_Minh", "America/Chicago"]);
   });
 });

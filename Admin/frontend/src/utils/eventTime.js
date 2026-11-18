@@ -27,29 +27,15 @@ export const FALLBACK_TIMEZONE = "Asia/Ho_Chi_Minh";
 export const TIMEZONE_ALIASES = {
   "Asia/Saigon": "Asia/Ho_Chi_Minh",
   "Asia/HoChiMinh": "Asia/Ho_Chi_Minh",
-  "US/Eastern": "America/New_York",
   "US/Central": "America/Chicago",
-  "US/Mountain": "America/Denver",
-  "US/Arizona": "America/Phoenix",
-  "US/Pacific": "America/Los_Angeles",
-  "US/Alaska": "America/Anchorage",
-  "US/Hawaii": "Pacific/Honolulu",
-  "America/Detroit": "America/New_York",
-  "America/Indiana/Indianapolis": "America/New_York",
-  "America/Boise": "America/Denver",
-  "America/Juneau": "America/Anchorage",
 };
 
 /**
- * Múi giờ mặc định cho một lớp mới: múi giờ của người đang tạo, NẾU sản phẩm hỗ trợ.
+ * Múi giờ mặc định cho một lớp mới: múi giờ của người đang tạo, NẾU sản phẩm hỗ trợ
+ * (Việt Nam hoặc Chicago); nếu không thì giờ Việt Nam.
  *
- * ⚠️ Trước đây `openPopup` đối chiếu với một danh sách 7 múi giờ viết cứng, tách rời
- * khỏi dropdown thật. Thầy cô ở Denver/Phoenix/Honolulu… không nằm trong danh sách đó
- * nên form mặc định về giờ Việt Nam, trong khi ô giờ họ vừa bấm trên lưới lại là giờ
- * của họ → lớp bị tạo lệch tới 13 tiếng mà không có cảnh báo nào.
- *
- * Nay hàm nhận thẳng `supportedValues` lấy từ chính dropdown (API /timezones), nên hai
- * bên không thể lệch nhau được nữa.
+ * Hàm nhận thẳng `supportedValues` lấy từ chính dropdown (API /timezones), nên mặc
+ * định không bao giờ là một múi giờ nằm ngoài dropdown.
  */
 export const resolveDefaultTimezone = (browserTimezone, supportedValues = []) => {
   const supported = supportedValues.filter(Boolean);

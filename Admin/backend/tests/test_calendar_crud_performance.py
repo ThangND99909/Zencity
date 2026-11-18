@@ -156,6 +156,12 @@ class CalendarUpdateTests(unittest.TestCase):
         self.service.events.return_value.insert.return_value = insert_request
         self.service.events.return_value.update.return_value.execute.return_value = master
         self.service.events.return_value.delete.return_value.execute.return_value = None
+        # Every session from this one on is still there: nothing to keep out of the new series.
+        self.service.events.return_value.instances.return_value.execute.return_value = {"items": [
+            {"id": f"master_{day.replace('-', '')}T080000Z", "status": "confirmed",
+             "originalStartTime": {"dateTime": f"{day}T15:00:00+07:00"}}
+            for day in ("2026-08-20", "2026-08-27", "2026-09-03", "2026-09-10")
+        ]}
         class_info = {
             "name": "Updated series",
             "classname": "Class A",
@@ -186,6 +192,7 @@ class CalendarUpdateTests(unittest.TestCase):
         inserted_body = self.service.events.return_value.insert.call_args.kwargs["body"]
         self.assertEqual(inserted_body["start"]["dateTime"], "2026-08-20T15:00:00+07:00")
         self.assertEqual(inserted_body["end"]["dateTime"], "2026-08-20T16:00:00+07:00")
+        self.assertEqual(inserted_body["recurrence"], ["RRULE:FREQ=WEEKLY;COUNT=3;BYDAY=TH"])
 
     def test_recurring_instance_is_detached_without_redundant_delete(self):
         instance = {

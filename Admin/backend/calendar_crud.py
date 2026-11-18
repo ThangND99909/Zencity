@@ -13,7 +13,9 @@ from calendar_parity import (
     parity_of,
     plan_series_segments,
     segment_recurrence,
+    series_occurrence_starts,
     to_utc,
+    utc_stamp,
 )
 from datetime import datetime, timedelta, timezone
 import pytz
@@ -1178,6 +1180,50 @@ def create_event(class_info, idempotency_key=None):
         traceback.print_exc()
         raise
 
+
+def preview_event(class_info):
+    """Chạy thử create_event: mỗi đoạn sẽ vào calendar nào — KHÔNG ghi gì lên Google.
+
+    Dùng đúng parity_of / plan_series_segments như _plan_event_bodies nên kết quả
+    khớp với lúc tạo thật, kể cả khi chuỗi bị tách tại mốc đổi giờ.
+    """
+    timezone_name = validate_timezone(class_info.get('timezone', 'Asia/Ho_Chi_Minh'))
+    start_utc = to_utc(normalize_datetime_with_timezone(class_info['start'], timezone_name), timezone_name)
+    end_utc = to_utc(normalize_datetime_with_timezone(class_info['end'], timezone_name), timezone_name)
+    if end_utc <= start_utc:
+        raise ValueError("Event end time must be later than its start time")
+
+    recurrence = class_info.get('rrule') or []
+    if has_rrule(recurrence):
+        segments = [
+            (segment.parity, segment.starts)
+            for segment in plan_series_segments(start_utc, timezone_name, recurrence)
+        ]
+    else:
+        segments = [(parity_of(start_utc), (start_utc,))]
+
+    tz = pytz.timezone(timezone_name)
+
+    def describe(moment):
+        return {
+            'local': moment.astimezone(tz).isoformat(),
+            'vietnam': moment.astimezone(PARITY_TIMEZONE).isoformat(),
+        }
+
+    return {
+        'timezone': timezone_name,
+        'occurrence_count': sum(len(starts) for _, starts in segments),
+        'segments': [
+            {
+                'calendar': parity,
+                'occurrence_count': len(starts),
+                'first_start': describe(starts[0]),
+                'last_start': describe(starts[-1]),
+            }
+            for parity, starts in segments
+        ],
+    }
+
 # ========== GOOGLE CALENDAR UPDATE FUNCTIONS ==========
 
 
@@ -1642,6 +1688,77 @@ def stop_recurrence_at_instance(master_event, instance_start_iso):
     return master_event
 
 
+def _live_instances(calendar_id, master_id):
+    """Các buổi CÒN trên Google thuộc chuỗi `master_id`, hỏi thẳng API instances()."""
+    page_token = None
+    while True:
+        params = {
+            'calendarId': calendar_id,
+            'eventId': master_id,
+            'showDeleted': False,
+            'maxResults': 2500,
+            'fields': 'nextPageToken,items(id,status,start,originalStartTime)',
+        }
+        if page_token:
+            params['pageToken'] = page_token
+        response = calendar_service.events().instances(**params).execute(http=_wr_http())
+        for item in response.get('items', []):
+            if item.get('status') != 'cancelled':
+                yield item
+        page_token = response.get('nextPageToken')
+        if not page_token:
+            return
+
+
+def _missing_occurrences(calendar_id, master, from_utc):
+    """Buổi mà luật lặp của `master` sinh ra từ `from_utc` trở đi nhưng không còn trên Google.
+
+    Đó là các buổi đã sửa riêng (mode 'this': EXDATE + một sự kiện riêng) hoặc đã xóa
+    riêng (Google hủy instance). Luật lặp gốc đã kiểm chứng trên Google thật nên phần
+    chênh lệch giữa hai bên chính là các buổi ngoại lệ.
+    """
+    zone = (master.get('start') or {}).get('timeZone') or 'Asia/Ho_Chi_Minh'
+    expected = [
+        start for start in series_occurrence_starts(
+            master['start']['dateTime'], zone, master.get('recurrence') or []
+        ) if start >= from_utc
+    ]
+    if not expected:
+        return []
+    live = [start for start in map(_occurrence_start_utc, _live_instances(calendar_id, master['id'])) if start]
+    return [
+        start for start in expected
+        if not any(abs((start - other).total_seconds()) <= OCCURRENCE_MATCH_TOLERANCE_SECONDS for other in live)
+    ]
+
+
+def _following_exdates(calendar_id, master, series_id, from_utc, start_iso, timezone_name, new_rrule):
+    """EXDATE cho chuỗi mới của mode 'following', để buổi đã sửa/xóa riêng không quay lại.
+
+    Chuỗi mới được dựng lại từ luật lặp (không mang theo ngoại lệ), nên buổi đã sửa riêng
+    sẽ bị nhân đôi và buổi đã xóa riêng sẽ hiện lại. Mỗi buổi ngoại lệ (của đoạn hiện tại
+    và các đoạn sau, vốn sẽ bị gỡ) được loại khỏi chuỗi mới theo NGÀY địa phương của nó.
+    COUNT vẫn đếm cả buổi bị loại (RFC 5545), nên chuỗi mới kết thúc đúng ngày như cũ.
+    """
+    missing = _missing_occurrences(calendar_id, master, from_utc)
+    for segment_calendar, segment in _list_series_masters(series_id) if series_id else []:
+        first = _occurrence_start_utc(segment)
+        if segment.get('id') != master.get('id') and first is not None and first >= from_utc:
+            missing.extend(_missing_occurrences(segment_calendar, segment, from_utc))
+    if not missing:
+        return []
+
+    old_zone = pytz.timezone((master.get('start') or {}).get('timeZone') or 'Asia/Ho_Chi_Minh')
+    new_zone = pytz.timezone(timezone_name)
+    skipped_days = {moment.astimezone(old_zone).date() for moment in missing}
+    excluded = [
+        start for start in series_occurrence_starts(start_iso, timezone_name, new_rrule)
+        if start.astimezone(new_zone).date() in skipped_days
+    ]
+    print(f"🧩 Keeping {len(excluded)} edited/deleted occurrence(s) out of the new series")
+    return [f"EXDATE:{','.join(utc_stamp(start) for start in excluded)}"] if excluded else []
+
+
 def update_following_events(
     instance_id,
     master_event_id,
@@ -1657,6 +1774,7 @@ def update_following_events(
        - Giữ nguyên giờ local, đổi UTC offset nếu đổi timezone.
        - Chuỗi mới vào đúng calendar chẵn/lẻ theo giờ VN, tách đoạn tại mốc đổi giờ;
          các đoạn sau của chuỗi cũ (nếu có) cũng được gỡ.
+       - Buổi phía sau đã sửa riêng hoặc xóa riêng vẫn bị loại khỏi chuỗi mới (EXDATE).
     """
     try:
         import re
@@ -1726,13 +1844,24 @@ def update_following_events(
                 f"RRULE:FREQ=MONTHLY;COUNT={new_count};BYMONTHDAY={','.join(map(str, class_info['bymonthday']))}"
             ]
 
+        from_utc = datetime.fromisoformat(instance_start.replace("Z", "+00:00")).astimezone(pytz.utc)
+        old_series_id = _series_id_for(calendar_id, master_event_id, master)
+        try:
+            exdates = _following_exdates(
+                calendar_id, master, old_series_id, from_utc, start_iso, timezone, new_rrule
+            )
+        except ValueError as e:
+            # Luật lặp cũ không bung được (vd chuỗi cũ không có điểm kết thúc): giữ cách cũ.
+            print(f"⚠️ Could not read edited/deleted occurrences of the old series: {e}")
+            exdates = []
+
         new_event = {
             "summary": class_info.get("name", master.get("summary", "")),
             "description": build_event_description(class_info) + "\n(New following series)",
             "location": class_info.get("zoom_link", master.get("location", "")),
             "start": {"dateTime": start_iso, "timeZone": timezone},
             "end": {"dateTime": end_iso, "timeZone": timezone},
-            "recurrence": new_rrule,
+            "recurrence": new_rrule + exdates,
         }
 
         # 5️⃣ TẠO chuỗi mới TRƯỚC — mỗi đoạn vào đúng calendar theo giờ VN, tự tách
@@ -1778,8 +1907,6 @@ def update_following_events(
         #    các đoạn đó thuộc phần "following" nên cũng phải gỡ, nếu không sẽ trùng lịch.
         result = {**created[0][1]}
         try:
-            old_series_id = _series_id_for(calendar_id, master_event_id, master)
-            from_utc = datetime.fromisoformat(instance_start.replace("Z", "+00:00")).astimezone(pytz.utc)
             _delete_later_segments(old_series_id, master_event_id, from_utc)
         except Exception as e:
             # Chuỗi mới đã tạo xong nên không raise (client thử lại sẽ sinh bản trùng).
@@ -1838,29 +1965,11 @@ def _find_occurrence_id_by_start(calendar_id, master_id, target_dt):
     thể trả về đúng một buổi CỦA CHÍNH chuỗi đó, hoặc None. Không bao giờ trả về một
     sự kiện "gần giống".
     """
-    page_token = None
-    while True:
-        params = {
-            'calendarId': calendar_id,
-            'eventId': master_id,
-            'showDeleted': False,
-            'maxResults': 2500,
-            'fields': 'nextPageToken,items(id,status,start,originalStartTime)',
-        }
-        if page_token:
-            params['pageToken'] = page_token
-        response = calendar_service.events().instances(**params).execute(http=_wr_http())
-
-        for item in response.get('items', []):
-            if item.get('status') == 'cancelled':
-                continue
-            start = _occurrence_start_utc(item)
-            if start and abs((start - target_dt).total_seconds()) <= OCCURRENCE_MATCH_TOLERANCE_SECONDS:
-                return item.get('id')
-
-        page_token = response.get('nextPageToken')
-        if not page_token:
-            return None
+    for item in _live_instances(calendar_id, master_id):
+        start = _occurrence_start_utc(item)
+        if start and abs((start - target_dt).total_seconds()) <= OCCURRENCE_MATCH_TOLERANCE_SECONDS:
+            return item.get('id')
+    return None
 
 
 def _recover_gone_delete(event_id, master_id, target_dt, calendar_order, deleted_from):

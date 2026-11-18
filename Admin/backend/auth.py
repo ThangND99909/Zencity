@@ -31,6 +31,32 @@ if not AUTH_SECRET:
     # Development-only secret. It deliberately changes when the process restarts.
     AUTH_SECRET = secrets.token_urlsafe(48)
 
+# Khoá cho service khác (ZenGuide AI Dashboard) gọi API qua header X-API-Key.
+# Để trống = tắt hẳn đường xác thực này. Khoá CHỈ mở được SERVICE_API_ROUTES:
+# đọc/tạo/sửa/xoá lớp như form Smart Calendar và đọc danh sách programs; KHÔNG
+# tạo/sửa/xoá được programs hay các route quản trị khác.
+SERVICE_API_KEY = os.getenv("SERVICE_API_KEY", "").strip()
+SERVICE_API_KEY_MIN_LENGTH = 32
+
+if SERVICE_API_KEY and len(SERVICE_API_KEY) < SERVICE_API_KEY_MIN_LENGTH:
+    raise RuntimeError(
+        f"SERVICE_API_KEY must be at least {SERVICE_API_KEY_MIN_LENGTH} characters"
+    )
+
+# "{...}" khớp đúng MỘT đoạn path, vd "/classes/{event_id}" khớp "/classes/abc_20261110T000000Z".
+SERVICE_API_ROUTES = frozenset({
+    ("GET", "/classes"),
+    ("GET", "/programs"),
+    ("GET", "/timezones"),
+    ("POST", "/check-conflict"),
+    ("POST", "/classes/preview"),
+    ("POST", "/classes"),
+    # Chatbot ZenGuide kiểm tra, sửa và xoá lớp (luôn có bước xác nhận của người dùng).
+    ("GET", "/classes/{event_id}"),
+    ("PUT", "/classes/{event_id}"),
+    ("DELETE", "/classes/{event_id}"),
+})
+
 # Số lớp proxy tin cậy đứng trước ứng dụng (Render/Cloudflare/nginx...).
 # 0 = không có proxy ⇒ BỎ QUA hoàn toàn header X-Forwarded-For.
 TRUSTED_PROXY_COUNT = int(os.getenv("TRUSTED_PROXY_COUNT", "0"))
@@ -153,3 +179,25 @@ def validate_access_token(token: str) -> bool:
         return int(data.get("exp", 0)) > int(time.time())
     except (ValueError, TypeError, json.JSONDecodeError):
         return False
+
+
+def verify_service_api_key(api_key: str) -> bool:
+    return bool(SERVICE_API_KEY) and hmac.compare_digest(
+        (api_key or "").encode(), SERVICE_API_KEY.encode()
+    )
+
+
+def _path_matches(template: str, path: str) -> bool:
+    template_parts, path_parts = template.split("/"), path.split("/")
+    return len(template_parts) == len(path_parts) and all(
+        expected == actual or (expected.startswith("{") and expected.endswith("}") and actual != "")
+        for expected, actual in zip(template_parts, path_parts)
+    )
+
+
+def is_service_api_route(method: str, path: str) -> bool:
+    method, path = method.upper(), path.rstrip("/") or "/"
+    return any(
+        route_method == method and _path_matches(route_path, path)
+        for route_method, route_path in SERVICE_API_ROUTES
+    )
