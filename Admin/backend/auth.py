@@ -33,8 +33,8 @@ if not AUTH_SECRET:
 
 # Khoá cho service khác (ZenGuide AI Dashboard) gọi API qua header X-API-Key.
 # Để trống = tắt hẳn đường xác thực này. Khoá CHỈ mở được SERVICE_API_ROUTES:
-# đọc/tạo/sửa/xoá lớp như form Smart Calendar, KHÔNG đụng được programs hay
-# các route quản trị khác.
+# đọc/tạo/sửa/xoá lớp như form Smart Calendar và đọc danh sách programs; KHÔNG
+# tạo/sửa/xoá được programs hay các route quản trị khác.
 SERVICE_API_KEY = os.getenv("SERVICE_API_KEY", "").strip()
 SERVICE_API_KEY_MIN_LENGTH = 32
 
